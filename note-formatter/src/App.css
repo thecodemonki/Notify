@@ -768,6 +768,27 @@ body {
   font-size: 0.9rem;
 }
 
+.btn-magic {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  animation: shimmer 3s ease infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); }
+  50% { box-shadow: 0 6px 20px rgba(118, 75, 162, 0.6); }
+}
+
+.btn-magic:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.settings-btn {
+  border: 2px solid var(--accent-warm);
+}
+
 .btn-primary {
   background: var(--accent-warm);
   color: white;
@@ -962,6 +983,147 @@ body {
 }
 
 /* ===============================================
+   STAGE 6: SETTINGS MODAL
+   =============================================== */
+
+.settings-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+  animation: fadeIn 0.3s ease;
+  overflow-y: auto;
+  padding: var(--spacing-lg);
+}
+
+.settings-modal {
+  background: var(--secondary-bg);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  animation: slideUp 0.4s ease;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-lg);
+  border-bottom: 2px solid var(--border-light);
+  position: sticky;
+  top: 0;
+  background: var(--secondary-bg);
+  z-index: 10;
+}
+
+.settings-header h2 {
+  font-family: var(--font-display);
+  color: var(--accent-deep);
+  font-size: 2rem;
+  margin: 0;
+}
+
+.settings-content {
+  padding: var(--spacing-lg);
+}
+
+.settings-description {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  margin-bottom: var(--spacing-lg);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.settings-grid {
+  display: grid;
+  gap: var(--spacing-md);
+}
+
+.setting-item {
+  background: var(--primary-bg);
+  border: 2px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  transition: all var(--transition-fast);
+}
+
+.setting-item:hover {
+  border-color: var(--accent-warm);
+  transform: translateX(5px);
+  box-shadow: 0 4px 12px var(--shadow);
+}
+
+.setting-label {
+  display: flex;
+  gap: var(--spacing-md);
+  cursor: pointer;
+  align-items: flex-start;
+}
+
+.setting-label input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+  accent-color: var(--accent-warm);
+}
+
+.setting-info {
+  flex: 1;
+}
+
+.setting-info h4 {
+  font-size: 1.1rem;
+  color: var(--accent-deep);
+  margin-bottom: var(--spacing-xs);
+  font-weight: 600;
+}
+
+.setting-info p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-bottom: var(--spacing-xs);
+  line-height: 1.5;
+}
+
+.setting-info .example {
+  display: inline-block;
+  padding: 0.3rem 0.6rem;
+  background: var(--secondary-bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: var(--accent-deep);
+  margin-top: var(--spacing-xs);
+}
+
+.settings-footer {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: center;
+  padding-top: var(--spacing-lg);
+  margin-top: var(--spacing-lg);
+  border-top: 2px solid var(--border-light);
+}
+
+.settings-footer .btn {
+  padding: 0.8rem 2rem;
+  font-size: 1rem;
+}
+
+/* ===============================================
    RESPONSIVE DESIGN
    =============================================== */
 
@@ -1007,6 +1169,31 @@ body {
   .mode-btn {
     padding: 0.6rem 1rem;
     font-size: 0.9rem;
+  }
+  
+  .settings-modal {
+    border-radius: var(--radius-md);
+  }
+  
+  .settings-header {
+    padding: var(--spacing-md);
+  }
+  
+  .settings-header h2 {
+    font-size: 1.3rem;
+  }
+  
+  .settings-content {
+    padding: var(--spacing-md);
+  }
+  
+  .setting-info h4 {
+    font-size: 1rem;
+  }
+  
+  .btn-magic {
+    font-size: 0.85rem;
+    padding: 0.5rem 1rem;
   }
 }
 
