@@ -11,135 +11,439 @@ function App() {
   const [showSidebar, setShowSidebar] = useState(false);
   const [notification, setNotification] = useState(null);
   
-  // STAGE 1-5: Previous features
+  // Stages 1-5
   const [selectedTheme, setSelectedTheme] = useState('warm');
   const [selectedTemplate, setSelectedTemplate] = useState('default');
-  const [highlightPalette, setHighlightPalette] = useState([
-    '#ffeb3b', '#ffd4d4', '#d4e4ff', '#d4ffd4', '#ffe4cc'
-  ]);
+  const [highlightPalette] = useState(['#ffeb3b', '#ffd4d4', '#d4e4ff', '#d4ffd4', '#ffe4cc']);
   const [currentHighlight, setCurrentHighlight] = useState(0);
   const [showDiagramView, setShowDiagramView] = useState(false);
   const [diagramType, setDiagramType] = useState('flowchart');
   const [showMindMap, setShowMindMap] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [voiceTranscript, setVoiceTranscript] = useState('');
   const [viewMode, setViewMode] = useState('editor');
   const [currentPage, setCurrentPage] = useState(0);
   const [journeyProgress, setJourneyProgress] = useState(0);
-  const [journeyPaused, setJourneyPaused] = useState(false);
-  const [quizMode, setQuizMode] = useState(false);
-  const [currentQuiz, setCurrentQuiz] = useState(null);
 
-  // STAGE 6: Smart Auto-Formatting Settings
+  // Stage 6: Smart Formatting
   const [showSettings, setShowSettings] = useState(false);
   const [autoFormatSettings, setAutoFormatSettings] = useState({
-    enhanceTopics: true,        // Main topics → bigger/bolder
-    enhanceSubtopics: true,     // Subtopics → indented with →
-    highlightKeywords: true,    // Important words → highlighted
-    formatDefinitions: true,    // "Word: definition" → special format
-    detectQuestions: true,      // Questions → special format
-    addIcons: true,            // Add icons (!, ?, ✓)
-    improveSpacing: true,      // Better line spacing
-    colorCode: true            // Color-code by importance
+    enhanceTopics: true,
+    enhanceSubtopics: true,
+    highlightKeywords: true,
+    formatDefinitions: true,
+    detectQuestions: true,
+    addIcons: true,
+    improveSpacing: true,
+    colorCode: true
   });
+
+  // STAGE 7: AI Chat
+  const [showAIChat, setShowAIChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isAIThinking, setIsAIThinking] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const [pomodoroActive, setPomodoroActive] = useState(false);
+  const [pomodoroTime, setPomodoroTime] = useState(25 * 60); // 25 minutes
+  const [pomodoroInterval, setPomodoroInterval] = useState(null);
+
+  // STAGE 8: Analytics
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [studyStats, setStudyStats] = useState({
+    totalNotes: 0,
+    totalStudyTime: 0,
+    notesThisWeek: 0,
+    longestStreak: 0,
+    currentStreak: 0,
+    lastStudyDate: null,
+    topicsStudied: {},
+    dailyActivity: {}
+  });
+  const [sessionStartTime, setSessionStartTime] = useState(Date.now());
+
+  // STAGE 9: Advanced Visuals
+  const [layoutMode, setLayoutMode] = useState('standard'); // standard, magazine, grid, asymmetric
+  const [animationsEnabled, setAnimationsEnabled] = useState(true);
+  const [customTemplate, setCustomTemplate] = useState(null);
+  const [showTemplateLibrary, setShowTemplateLibrary] = useState(false);
+
+  // STAGE 10: Topic Organization
+  const [selectedTopic, setSelectedTopic] = useState('general');
+  const [tags, setTags] = useState([]);
+  const [currentNoteTags, setCurrentNoteTags] = useState([]);
+  const [showTagManager, setShowTagManager] = useState(false);
+  const [folders, setFolders] = useState(['General', 'Math', 'Science', 'History', 'Languages', 'Other']);
+  const [currentFolder, setCurrentFolder] = useState('General');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
+  const chatEndRef = useRef(null);
 
-  // ========== LOAD SAVED NOTES & SETTINGS ==========
+  // ========== LOAD DATA ON MOUNT ==========
   useEffect(() => {
     loadSavedNotes();
     loadSettings();
+    loadAnalytics();
+    loadTags();
+    loadFolders();
     initializeVoiceRecognition();
+    trackStudySession();
   }, []);
 
-  const loadSettings = () => {
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  // Track study time
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const sessionTime = Math.floor((Date.now() - sessionStartTime) / 1000);
+      updateStudyTime(sessionTime);
+    }, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, [sessionStartTime]);
+
+  // Pomodoro timer
+  useEffect(() => {
+    if (pomodoroActive && pomodoroTime > 0) {
+      const interval = setInterval(() => {
+        setPomodoroTime(time => {
+          if (time <= 1) {
+            setPomodoroActive(false);
+            showNotification('⏰ Pomodoro complete! Take a break!', 'success');
+            return 25 * 60;
+          }
+          return time - 1;
+        });
+      }, 1000);
+      setPomodoroInterval(interval);
+      return () => clearInterval(interval);
+    }
+  }, [pomodoroActive, pomodoroTime]);
+
+  // ========== STAGE 7: AI CHAT FUNCTIONS ==========
+  
+  const sendMessageToAI = async (message) => {
+    const userMessage = { role: 'user', content: message, timestamp: Date.now() };
+    setChatMessages(prev => [...prev, userMessage]);
+    setChatInput('');
+    setIsAIThinking(true);
+
     try {
-      const saved = localStorage.getItem('noteFormatter_settings');
-      if (saved) {
-        setAutoFormatSettings(JSON.parse(saved));
-      }
+      // Simulate AI response (in production, call actual AI API)
+      const aiResponse = generateAIResponse(message);
+      
+      setTimeout(() => {
+        const assistantMessage = { 
+          role: 'assistant', 
+          content: aiResponse, 
+          timestamp: Date.now() 
+        };
+        setChatMessages(prev => [...prev, assistantMessage]);
+        setIsAIThinking(false);
+      }, 1500);
     } catch (error) {
-      console.error('Error loading settings:', error);
+      console.error('AI error:', error);
+      setIsAIThinking(false);
+      showNotification('AI error occurred', 'error');
     }
   };
 
-  const saveSettings = (newSettings) => {
-    setAutoFormatSettings(newSettings);
-    localStorage.setItem('noteFormatter_settings', JSON.stringify(newSettings));
-    showNotification('⚙️ Settings saved!', 'success');
+  const generateAIResponse = (message) => {
+    const lower = message.toLowerCase();
+    
+    // Question answering
+    if (lower.includes('what is') || lower.includes('define')) {
+      const context = rawText.substring(0, 500);
+      return `Based on your notes: ${context ? 'I can see you\'re studying topics related to this. ' : ''}Let me help explain that concept. This is a simulated response - in production, this would use Claude AI API to analyze your notes and provide intelligent answers.`;
+    }
+    
+    // Summarization
+    if (lower.includes('summarize') || lower.includes('summary')) {
+      return `Here's a summary of your notes:\n\n• Main topics covered\n• Key concepts highlighted\n• Important definitions\n\nNote: This is a demo. Production version would use AI to generate real summaries.`;
+    }
+    
+    // Quiz generation
+    if (lower.includes('quiz') || lower.includes('test me')) {
+      return `Great! Here are some quiz questions based on your notes:\n\n1. What is the main concept?\n2. Define the key terms\n3. How do these ideas connect?\n\nNote: Production version would generate actual questions from your content.`;
+    }
+    
+    // Suggestions
+    if (lower.includes('suggest') || lower.includes('improve')) {
+      return `Suggestions to improve your notes:\n\n✓ Add more examples\n✓ Create visual diagrams\n✓ Include practice questions\n✓ Highlight key definitions\n\nNote: AI would provide specific suggestions based on content analysis.`;
+    }
+    
+    // Default response
+    return `I'm here to help with your notes! Ask me to:\n• Explain concepts\n• Summarize sections\n• Generate quiz questions\n• Suggest improvements\n• Find connections\n\nNote: This is a demo interface. Production version uses Claude AI API.`;
   };
 
-  // ========== STAGE 6: SMART AUTO-FORMATTING ==========
+  const toggleFocusMode = () => {
+    setFocusMode(!focusMode);
+    if (!focusMode) {
+      showNotification('🎯 Focus Mode activated! Distractions dimmed.', 'info');
+    }
+  };
+
+  const startPomodoro = () => {
+    setPomodoroActive(true);
+    setPomodoroTime(25 * 60);
+    showNotification('⏱️ Pomodoro started! 25 minutes of focused study.', 'info');
+  };
+
+  const stopPomodoro = () => {
+    setPomodoroActive(false);
+    if (pomodoroInterval) clearInterval(pomodoroInterval);
+    setPomodoroTime(25 * 60);
+  };
+
+  const formatPomodoroTime = () => {
+    const minutes = Math.floor(pomodoroTime / 60);
+    const seconds = pomodoroTime % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  // ========== STAGE 8: ANALYTICS FUNCTIONS ==========
+  
+  const loadAnalytics = () => {
+    try {
+      const saved = localStorage.getItem('noteFormatter_analytics');
+      if (saved) {
+        setStudyStats(JSON.parse(saved));
+      }
+    } catch (error) {
+      console.error('Error loading analytics:', error);
+    }
+  };
+
+  const saveAnalytics = (stats) => {
+    setStudyStats(stats);
+    localStorage.setItem('noteFormatter_analytics', JSON.stringify(stats));
+  };
+
+  const trackStudySession = () => {
+    const today = new Date().toDateString();
+    const stats = { ...studyStats };
+    
+    // Update last study date and streaks
+    if (stats.lastStudyDate !== today) {
+      const yesterday = new Date(Date.now() - 86400000).toDateString();
+      
+      if (stats.lastStudyDate === yesterday) {
+        stats.currentStreak++;
+      } else {
+        stats.currentStreak = 1;
+      }
+      
+      if (stats.currentStreak > stats.longestStreak) {
+        stats.longestStreak = stats.currentStreak;
+      }
+      
+      stats.lastStudyDate = today;
+    }
+    
+    // Track daily activity
+    if (!stats.dailyActivity[today]) {
+      stats.dailyActivity[today] = 0;
+    }
+    
+    saveAnalytics(stats);
+  };
+
+  const updateStudyTime = (additionalSeconds) => {
+    const stats = { ...studyStats };
+    stats.totalStudyTime += additionalSeconds;
+    
+    const today = new Date().toDateString();
+    if (!stats.dailyActivity[today]) {
+      stats.dailyActivity[today] = 0;
+    }
+    stats.dailyActivity[today] += additionalSeconds;
+    
+    saveAnalytics(stats);
+  };
+
+  const trackNoteCreation = (topic) => {
+    const stats = { ...studyStats };
+    stats.totalNotes++;
+    stats.notesThisWeek++; // Simplified - would track actual week
+    
+    if (!stats.topicsStudied[topic]) {
+      stats.topicsStudied[topic] = 0;
+    }
+    stats.topicsStudied[topic]++;
+    
+    saveAnalytics(stats);
+  };
+
+  const getTopTopics = () => {
+    const topics = Object.entries(studyStats.topicsStudied);
+    return topics.sort((a, b) => b[1] - a[1]).slice(0, 5);
+  };
+
+  const formatStudyTime = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
+  // ========== STAGE 9: ADVANCED VISUAL FUNCTIONS ==========
+  
+  const changeLayoutMode = (mode) => {
+    setLayoutMode(mode);
+    showNotification(`📐 Layout changed to ${mode}`, 'success');
+  };
+
+  const saveCustomTemplate = () => {
+    const template = {
+      name: prompt('Template name:') || 'Custom Template',
+      content: rawText,
+      theme: selectedTheme,
+      fontSize: fontSize,
+      createdAt: Date.now()
+    };
+    
+    setCustomTemplate(template);
+    localStorage.setItem('noteFormatter_customTemplate', JSON.stringify(template));
+    showNotification('✨ Template saved!', 'success');
+  };
+
+  const loadCustomTemplate = () => {
+    if (customTemplate) {
+      setRawText(customTemplate.content);
+      setSelectedTheme(customTemplate.theme);
+      setFontSize(customTemplate.fontSize);
+      showNotification('📄 Template loaded!', 'success');
+    }
+  };
+
+  // ========== STAGE 10: ORGANIZATION FUNCTIONS ==========
+  
+  const loadTags = () => {
+    try {
+      const saved = localStorage.getItem('noteFormatter_tags');
+      if (saved) {
+        setTags(JSON.parse(saved));
+      }
+    } catch (error) {
+      console.error('Error loading tags:', error);
+    }
+  };
+
+  const saveTags = (newTags) => {
+    setTags(newTags);
+    localStorage.setItem('noteFormatter_tags', JSON.stringify(newTags));
+  };
+
+  const addTag = (tag) => {
+    if (!tags.includes(tag)) {
+      const newTags = [...tags, tag];
+      saveTags(newTags);
+    }
+    
+    if (!currentNoteTags.includes(tag)) {
+      setCurrentNoteTags([...currentNoteTags, tag]);
+    }
+  };
+
+  const removeTag = (tag) => {
+    setCurrentNoteTags(currentNoteTags.filter(t => t !== tag));
+  };
+
+  const loadFolders = () => {
+    try {
+      const saved = localStorage.getItem('noteFormatter_folders');
+      if (saved) {
+        setFolders(JSON.parse(saved));
+      }
+    } catch (error) {
+      console.error('Error loading folders:', error);
+    }
+  };
+
+  const saveFolders = (newFolders) => {
+    setFolders(newFolders);
+    localStorage.setItem('noteFormatter_folders', JSON.stringify(newFolders));
+  };
+
+  const addFolder = () => {
+    const name = prompt('Folder name:');
+    if (name && !folders.includes(name)) {
+      const newFolders = [...folders, name];
+      saveFolders(newFolders);
+      showNotification(`📁 Folder "${name}" created!`, 'success');
+    }
+  };
+
+  const applyTopicFormat = (topic) => {
+    setSelectedTopic(topic);
+    
+    // Auto-apply topic-specific formatting
+    const topicTemplates = {
+      math: '## Problem\n\n## Solution\n\n## Answer\n\n',
+      science: '## Hypothesis\n\n## Experiment\n\n## Results\n\n## Conclusion\n\n',
+      history: '## Event\n\n## Date\n\n## Significance\n\n## Key Figures\n\n',
+      languages: '## Vocabulary\n\n## Grammar\n\n## Examples\n\n',
+      programming: '```\n// Code here\n```\n\n## Explanation\n\n'
+    };
+    
+    if (topicTemplates[topic.toLowerCase()] && !rawText.trim()) {
+      setRawText(topicTemplates[topic.toLowerCase()]);
+    }
+    
+    showNotification(`📚 Topic set to ${topic}`, 'info');
+  };
+
+  const searchNotes = (query) => {
+    setSearchQuery(query);
+    if (!query) return savedNotes;
+    
+    const lower = query.toLowerCase();
+    return savedNotes.filter(note => 
+      note.title.toLowerCase().includes(lower) ||
+      note.rawContent.toLowerCase().includes(lower) ||
+      (note.tags && note.tags.some(tag => tag.toLowerCase().includes(lower)))
+    );
+  };
+
+  // ========== STAGE 6: SMART FORMATTING (from previous) ==========
   
   const applySmartFormatting = () => {
     let formatted = rawText;
-    
     if (!formatted.trim()) {
       showNotification('⚠️ Nothing to format!', 'warning');
       return;
     }
 
-    // Apply each enabled transformation
-    if (autoFormatSettings.enhanceTopics) {
-      formatted = enhanceMainTopics(formatted);
-    }
-    
-    if (autoFormatSettings.enhanceSubtopics) {
-      formatted = enhanceSubtopics(formatted);
-    }
-    
-    if (autoFormatSettings.highlightKeywords) {
-      formatted = highlightImportantKeywords(formatted);
-    }
-    
-    if (autoFormatSettings.formatDefinitions) {
-      formatted = formatDefinitions(formatted);
-    }
-    
-    if (autoFormatSettings.detectQuestions) {
-      formatted = formatQuestions(formatted);
-    }
-    
-    if (autoFormatSettings.addIcons) {
-      formatted = addContextualIcons(formatted);
-    }
-    
-    if (autoFormatSettings.improveSpacing) {
-      formatted = improveSpacing(formatted);
-    }
-    
-    if (autoFormatSettings.colorCode) {
-      formatted = addColorCoding(formatted);
-    }
+    if (autoFormatSettings.enhanceTopics) formatted = enhanceMainTopics(formatted);
+    if (autoFormatSettings.enhanceSubtopics) formatted = enhanceSubtopics(formatted);
+    if (autoFormatSettings.highlightKeywords) formatted = highlightImportantKeywords(formatted);
+    if (autoFormatSettings.formatDefinitions) formatted = formatDefinitions(formatted);
+    if (autoFormatSettings.detectQuestions) formatted = formatQuestions(formatted);
+    if (autoFormatSettings.addIcons) formatted = addContextualIcons(formatted);
+    if (autoFormatSettings.improveSpacing) formatted = improveSpacing(formatted);
+    if (autoFormatSettings.colorCode) formatted = addColorCoding(formatted);
 
     setRawText(formatted);
     showNotification('✨ Notes formatted beautifully!', 'success');
   };
 
-  // Auto-formatting functions
-
   const enhanceMainTopics = (text) => {
     const lines = text.split('\n');
-    const formatted = lines.map(line => {
-      // Detect main topics (all caps, or short lines with important words)
+    return lines.map(line => {
       if (line.length > 0 && line.length < 50) {
         const upper = line.toUpperCase();
-        if (line === upper && !line.startsWith('#')) {
-          // All caps → make it a heading
-          return `# ${line}`;
-        }
-        
-        // Lines with key topic words
-        const topicWords = ['chapter', 'unit', 'section', 'overview', 'introduction', 'summary'];
-        const lowerLine = line.toLowerCase();
-        if (topicWords.some(word => lowerLine.includes(word)) && !line.startsWith('#')) {
+        if (line === upper && !line.startsWith('#')) return `# ${line}`;
+        const topicWords = ['chapter', 'unit', 'section', 'overview', 'introduction'];
+        if (topicWords.some(word => line.toLowerCase().includes(word)) && !line.startsWith('#')) {
           return `# ${line}`;
         }
       }
       return line;
-    });
-    return formatted.join('\n');
+    }).join('\n');
   };
 
   const enhanceSubtopics = (text) => {
@@ -149,266 +453,113 @@ function App() {
     
     lines.forEach((line, i) => {
       const trimmed = line.trim();
-      
-      // Skip if already formatted
       if (trimmed.startsWith('#') || trimmed.startsWith('-') || trimmed.startsWith('*') || 
           trimmed.startsWith('→') || trimmed.startsWith('•')) {
         formatted.push(line);
         return;
       }
-      
-      // Check if this looks like a subtopic
       const prevLine = i > 0 ? lines[i - 1].trim() : '';
-      const nextLine = i < lines.length - 1 ? lines[i + 1].trim() : '';
-      
-      // If previous line is a heading and this is short text
       if (prevLine.startsWith('#') && trimmed.length > 0 && trimmed.length < 60) {
         formatted.push(`  → ${trimmed}`);
         inList = true;
-      }
-      // If we're in a list context
-      else if (inList && trimmed.length > 0 && trimmed.length < 60 && !nextLine.startsWith('#')) {
+      } else if (inList && trimmed.length > 0 && trimmed.length < 60) {
         formatted.push(`  → ${trimmed}`);
-      }
-      else {
+      } else {
         formatted.push(line);
         if (trimmed.length === 0) inList = false;
       }
     });
-    
     return formatted.join('\n');
   };
 
   const highlightImportantKeywords = (text) => {
-    // Keywords that should be highlighted
-    const keywords = [
-      'important', 'crucial', 'essential', 'key', 'critical', 'vital',
-      'remember', 'note', 'warning', 'caution', 'attention',
-      'always', 'never', 'must', 'required', 'mandatory',
-      'exam', 'test', 'quiz', 'assignment', 'due',
-      'main', 'primary', 'principal', 'major', 'fundamental'
-    ];
-    
+    const keywords = ['important', 'crucial', 'essential', 'key', 'critical', 'remember', 'exam', 'test'];
     let formatted = text;
     keywords.forEach(keyword => {
-      // Only highlight if not already formatted
       const regex = new RegExp(`\\b(${keyword})\\b(?![^<]*>|[^<>]*</)`, 'gi');
       formatted = formatted.replace(regex, (match) => {
-        // Check if already in special formatting
-        if (formatted.indexOf(`==${match}==`) !== -1 || 
-            formatted.indexOf(`**${match}**`) !== -1) {
-          return match;
-        }
+        if (formatted.indexOf(`==${match}==`) !== -1) return match;
         return `==${match}==`;
       });
     });
-    
     return formatted;
   };
 
   const formatDefinitions = (text) => {
-    const lines = text.split('\n');
-    const formatted = lines.map(line => {
-      // Detect definition pattern: "Word: definition" or "Term - definition"
+    return text.split('\n').map(line => {
       const colonMatch = line.match(/^([^:]{2,30}):\s*(.+)$/);
-      const dashMatch = line.match(/^([^-]{2,30})\s*-\s*(.+)$/);
-      
       if (colonMatch && !line.startsWith('#')) {
         const [, term, definition] = colonMatch;
         return `**${term.trim()}**: *${definition.trim()}*`;
       }
-      
-      if (dashMatch && !line.startsWith('#')) {
-        const [, term, definition] = dashMatch;
-        return `**${term.trim()}**: *${definition.trim()}*`;
-      }
-      
       return line;
-    });
-    
-    return formatted.join('\n');
+    }).join('\n');
   };
 
   const formatQuestions = (text) => {
-    const lines = text.split('\n');
-    const formatted = lines.map(line => {
-      const trimmed = line.trim();
-      
-      // Detect questions
-      if (trimmed.endsWith('?') && !trimmed.startsWith('[?]')) {
-        return `[?] ${trimmed}`;
+    return text.split('\n').map(line => {
+      if (line.trim().endsWith('?') && !line.startsWith('[?]')) {
+        return `[?] ${line.trim()}`;
       }
-      
       return line;
-    });
-    
-    return formatted.join('\n');
+    }).join('\n');
   };
 
   const addContextualIcons = (text) => {
-    let formatted = text;
-    
-    // Add icons based on context
     const patterns = [
       { regex: /\b(complete|completed|done|finished)\b/gi, icon: '[x]' },
-      { regex: /\b(important|critical|crucial|vital)\b/gi, icon: '[!]' },
-      { regex: /\b(question|unclear|confused|help)\b/gi, icon: '[?]' },
-      { regex: /\b(excellent|great|perfect|amazing)\b/gi, icon: '[*]' }
+      { regex: /\b(important|critical|crucial)\b/gi, icon: '[!]' },
+      { regex: /\b(question|unclear)\b/gi, icon: '[?]' },
+      { regex: /\b(excellent|great|perfect)\b/gi, icon: '[*]' }
     ];
     
-    const lines = formatted.split('\n');
-    const result = lines.map(line => {
-      let modifiedLine = line;
-      
-      // Don't add icons if line already has them
-      if (line.includes('[x]') || line.includes('[!]') || 
-          line.includes('[?]') || line.includes('[*]')) {
+    return text.split('\n').map(line => {
+      if (line.includes('[x]') || line.includes('[!]') || line.includes('[?]') || line.includes('[*]')) {
         return line;
       }
-      
-      // Check each pattern
       for (const pattern of patterns) {
         if (pattern.regex.test(line)) {
-          modifiedLine = `${pattern.icon} ${line}`;
-          break; // Only add one icon per line
+          return `${pattern.icon} ${line}`;
         }
       }
-      
-      return modifiedLine;
-    });
-    
-    return result.join('\n');
+      return line;
+    }).join('\n');
   };
 
   const improveSpacing = (text) => {
     let formatted = text;
-    
-    // Add space after headings
     formatted = formatted.replace(/(^#{1,3}\s+.+$)/gm, '$1\n');
-    
-    // Add space before headings
     formatted = formatted.replace(/([^\n])\n(#{1,3}\s+)/gm, '$1\n\n$2');
-    
-    // Ensure lists have proper spacing
-    formatted = formatted.replace(/([^\n])\n([→•\-\*]\s+)/gm, '$1\n\n$2');
-    
-    // Clean up multiple blank lines
     formatted = formatted.replace(/\n{3,}/g, '\n\n');
-    
     return formatted;
   };
 
   const addColorCoding = (text) => {
-    const lines = text.split('\n');
-    const formatted = lines.map(line => {
-      // Skip already formatted lines
-      if (line.includes('[box]') || line.includes('[note]') || 
-          line.includes('[tip]') || line.includes('[warning]')) {
+    return text.split('\n').map(line => {
+      if (line.includes('[box]') || line.includes('[note]') || line.includes('[tip]') || line.includes('[warning]')) {
         return line;
       }
-      
       const lower = line.toLowerCase();
-      
-      // Warnings/Important
-      if (lower.includes('warning') || lower.includes('danger') || 
-          lower.includes('caution') || lower.includes('exam') || lower.includes('test')) {
+      if (lower.includes('warning') || lower.includes('exam') || lower.includes('test')) {
         return `[warning]${line}[/warning]`;
       }
-      
-      // Tips/Helpful
-      if (lower.includes('tip') || lower.includes('hint') || 
-          lower.includes('remember') || lower.includes('note that')) {
+      if (lower.includes('tip') || lower.includes('remember')) {
         return `[tip]${line}[/tip]`;
       }
-      
-      // Examples
-      if (lower.includes('example') || lower.includes('for instance') || 
-          lower.includes('such as')) {
+      if (lower.includes('example')) {
         return `[note]${line}[/note]`;
       }
-      
       return line;
-    });
-    
-    return formatted.join('\n');
+    }).join('\n');
   };
 
-  // ========== VOICE RECOGNITION ==========
-  const initializeVoiceRecognition = () => {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-
-      recognitionRef.current.onresult = (event) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        setVoiceTranscript(transcript);
-        processVoiceCommand(transcript);
-      };
-
-      recognitionRef.current.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        setIsListening(false);
-      };
-    }
-  };
-
-  const toggleVoiceInput = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-    } else {
-      recognitionRef.current?.start();
-      setIsListening(true);
-      showNotification('🎤 Listening...', 'info');
-    }
-  };
-
-  const processVoiceCommand = (command) => {
-    const lower = command.toLowerCase();
-    
-    if (lower.includes('make aesthetic') || lower.includes('format notes')) {
-      applySmartFormatting();
-    } else if (lower.includes('bigger') || lower.includes('larger')) {
-      setFontSize('large');
-      showNotification('✅ Font size increased', 'success');
-    } else if (lower.includes('smaller')) {
-      setFontSize('small');
-      showNotification('✅ Font size decreased', 'success');
-    } else if (lower.includes('settings')) {
-      setShowSettings(true);
-      showNotification('⚙️ Opening settings', 'info');
-    } else if (lower.includes('highlight')) {
-      wrapSelection('==', '==');
-    } else if (lower.includes('bold')) {
-      wrapSelection('**', '**');
-    } else if (lower.includes('save')) {
-      saveNote();
-    } else if (lower.includes('journey')) {
-      setViewMode('journey');
-    }
-  };
-
-  // ========== FORMATTING ENGINE (from previous stages) ==========
+  // ========== FORMATTING ENGINE ==========
   const formatText = (text) => {
     if (!text.trim()) {
       return '<p class="preview-placeholder">Your formatted notes will appear here...</p>';
     }
 
     let formatted = text;
-
-    if (selectedTemplate === 'cornell') {
-      formatted = formatCornellNotes(formatted);
-    } else if (selectedTemplate === 'outline') {
-      formatted = formatOutlineStyle(formatted);
-    } else if (selectedTemplate === 'flashcard') {
-      formatted = formatFlashcards(formatted);
-    }
-
     formatted = formatHeadings(formatted);
     formatted = formatBold(formatted);
     formatted = formatItalic(formatted);
@@ -419,14 +570,12 @@ function App() {
     formatted = formatLists(formatted);
     formatted = formatParagraphs(formatted);
 
-    return `<div class="formatted-content size-${fontSize} theme-${selectedTheme} template-${selectedTemplate}">${formatted}</div>`;
+    return `<div class="formatted-content size-${fontSize} theme-${selectedTheme} layout-${layoutMode}">${formatted}</div>`;
   };
 
   const formatSymbols = (text) => {
     text = text.replace(/->|→/g, '<span class="arrow">→</span>');
     text = text.replace(/<-|←/g, '<span class="arrow">←</span>');
-    text = text.replace(/\^|↑/g, '<span class="arrow">↑</span>');
-    text = text.replace(/v|↓/g, '<span class="arrow-down">↓</span>');
     text = text.replace(/\[!\]/g, '<span class="symbol-important">⚠️</span>');
     text = text.replace(/\[x\]/g, '<span class="symbol-done">✓</span>');
     text = text.replace(/\[\?\]/g, '<span class="symbol-question">❓</span>');
@@ -440,43 +589,6 @@ function App() {
     text = text.replace(/\[warning\]([\s\S]*?)\[\/warning\]/g, '<div class="content-warning">⚠️ $1</div>');
     text = text.replace(/\[tip\]([\s\S]*?)\[\/tip\]/g, '<div class="content-tip">💡 $1</div>');
     return text;
-  };
-
-  const formatCornellNotes = (text) => {
-    const lines = text.split('\n');
-    let result = '<div class="cornell-layout"><div class="cornell-cue">📌 Cues</div><div class="cornell-notes"><div class="cornell-main">';
-    lines.forEach(line => {
-      if (line.startsWith('Q:')) {
-        result += `<div class="cornell-question">${line.substring(2)}</div>`;
-      } else if (line.startsWith('A:')) {
-        result += `<div class="cornell-answer">${line.substring(2)}</div>`;
-      } else {
-        result += `<div>${line}</div>`;
-      }
-    });
-    result += '</div></div><div class="cornell-summary">📝 Summary</div></div>';
-    return result;
-  };
-
-  const formatOutlineStyle = (text) => {
-    let formatted = text;
-    formatted = formatted.replace(/^I\.\s+(.+)$/gm, '<div class="outline-level-1">I. $1</div>');
-    formatted = formatted.replace(/^\s+A\.\s+(.+)$/gm, '<div class="outline-level-2">A. $1</div>');
-    formatted = formatted.replace(/^\s+1\.\s+(.+)$/gm, '<div class="outline-level-3">1. $1</div>');
-    return formatted;
-  };
-
-  const formatFlashcards = (text) => {
-    const cards = text.split('---');
-    let result = '<div class="flashcard-grid">';
-    cards.forEach((card, i) => {
-      const [front, back] = card.split('::');
-      if (front && back) {
-        result += `<div class="flashcard"><div class="flashcard-front">${front.trim()}</div><div class="flashcard-back">${back.trim()}</div></div>`;
-      }
-    });
-    result += '</div>';
-    return result;
   };
 
   const formatHeadings = (text) => {
@@ -544,58 +656,41 @@ function App() {
     return paragraphs.join('\n');
   };
 
-  // [Previous Stage 2-5 functions: generateDiagram, generateMindMapData, startJourney, etc.]
-  // [Keeping them but truncating here for brevity - they remain the same]
-
-  const generateDiagram = () => {
-    const lines = rawText.split('\n').filter(l => l.trim());
-    let mermaidCode = '';
-    if (diagramType === 'flowchart') {
-      mermaidCode = 'graph TD\n';
-      lines.forEach((line, i) => {
-        const clean = line.replace(/[#*\-=]/g, '').trim();
-        if (clean) {
-          mermaidCode += `  A${i}["${clean}"]\n`;
-          if (i > 0) mermaidCode += `  A${i-1} --> A${i}\n`;
+  // ========== VOICE & OTHER UTILITIES ==========
+  const initializeVoiceRecognition = () => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
         }
-      });
+        processVoiceCommand(transcript);
+      };
     }
-    return mermaidCode;
   };
 
-  const generateMindMapData = () => {
-    const lines = rawText.split('\n');
-    const nodes = [];
-    const edges = [];
-    let nodeId = 0;
-    lines.forEach((line, i) => {
-      if (line.trim()) {
-        const level = line.search(/\S/);
-        const text = line.trim().replace(/[#*\-]/g, '').trim();
-        nodes.push({
-          id: `node-${nodeId}`,
-          label: text,
-          level: Math.floor(level / 2),
-          x: 100 + (Math.floor(level / 2) * 200),
-          y: 50 + (nodeId * 80)
-        });
-        if (nodeId > 0 && level > 0) {
-          edges.push({ from: `node-${nodeId - 1}`, to: `node-${nodeId}` });
-        }
-        nodeId++;
-      }
-    });
-    return { nodes, edges };
+  const toggleVoiceInput = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current?.start();
+      setIsListening(true);
+      showNotification('🎤 Listening...', 'info');
+    }
   };
 
-  const startJourney = () => {
-    setViewMode('journey');
-    setJourneyProgress(0);
-    setJourneyPaused(false);
-    showNotification('🚀 Journey started!', 'success');
+  const processVoiceCommand = (command) => {
+    const lower = command.toLowerCase();
+    if (lower.includes('make aesthetic')) applySmartFormatting();
+    else if (lower.includes('analytics')) setShowAnalytics(true);
+    else if (lower.includes('chat')) setShowAIChat(true);
+    else if (lower.includes('focus')) toggleFocusMode();
   };
-
-  // [Other functions: wrapSelection, saveNote, loadNote, etc. remain the same]
 
   const wrapSelection = (before, after) => {
     const textarea = textareaRef.current;
@@ -606,11 +701,6 @@ function App() {
     if (selectedText) {
       const newText = rawText.substring(0, start) + before + selectedText + after + rawText.substring(end);
       setRawText(newText);
-      setTimeout(() => {
-        textarea.focus();
-        const newPos = start + before.length + selectedText.length + after.length;
-        textarea.setSelectionRange(newPos, newPos);
-      }, 0);
     }
   };
 
@@ -634,11 +724,15 @@ function App() {
       formattedContent: formatText(rawText),
       createdAt: new Date().toISOString(),
       theme: selectedTheme,
-      template: selectedTemplate
+      template: selectedTemplate,
+      topic: selectedTopic,
+      tags: currentNoteTags,
+      folder: currentFolder
     };
     const notes = [...savedNotes, note];
     setSavedNotes(notes);
     localStorage.setItem('noteFormatter_savedNotes', JSON.stringify(notes));
+    trackNoteCreation(selectedTopic);
     showNotification('📝 Note saved!', 'success');
   };
 
@@ -651,10 +745,27 @@ function App() {
     }
   };
 
+  const loadSettings = () => {
+    try {
+      const saved = localStorage.getItem('noteFormatter_settings');
+      if (saved) setAutoFormatSettings(JSON.parse(saved));
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  };
+
+  const saveSettings = (newSettings) => {
+    setAutoFormatSettings(newSettings);
+    localStorage.setItem('noteFormatter_settings', JSON.stringify(newSettings));
+    showNotification('⚙️ Settings saved!', 'success');
+  };
+
   const loadNote = (note) => {
     setRawText(note.rawContent);
     setSelectedTheme(note.theme || 'warm');
-    setSelectedTemplate(note.template || 'default');
+    setSelectedTopic(note.topic || 'general');
+    setCurrentNoteTags(note.tags || []);
+    setCurrentFolder(note.folder || 'General');
     setShowSidebar(false);
     showNotification('✅ Note loaded!', 'success');
   };
@@ -701,10 +812,7 @@ function App() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
-  };
+  const formatDate = (dateString) => new Date(dateString).toLocaleDateString();
 
   const splitIntoPages = () => rawText.split(/\n\s*\n/);
   const nextPage = () => { if (currentPage < splitIntoPages().length - 1) setCurrentPage(currentPage + 1); };
@@ -712,27 +820,24 @@ function App() {
 
   // ========== RENDER ==========
   return (
-    <div className={`app theme-${selectedTheme}`}>
+    <div className={`app theme-${selectedTheme} ${focusMode ? 'focus-mode' : ''}`}>
       <header className="header">
-        <h1>✨ Note Formatter Pro</h1>
-        <p>Smart Auto-Formatting • Visual Tools • Voice Control • Journey Mode</p>
+        <h1>✨ Note Formatter Ultimate</h1>
+        <p>AI Chat • Analytics • Smart Formatting • Visual Tools • Full Organization</p>
       </header>
 
       <div className="view-mode-switcher">
         <button className={`mode-btn ${viewMode === 'editor' ? 'active' : ''}`} onClick={() => setViewMode('editor')}>
           ✏️ Editor
         </button>
-        <button className={`mode-btn ${viewMode === 'book' ? 'active' : ''}`} onClick={() => setViewMode('book')}>
-          📖 Book View
+        <button className={`mode-btn ${showAIChat ? 'active' : ''}`} onClick={() => setShowAIChat(!showAIChat)}>
+          💬 AI Chat
         </button>
-        <button className={`mode-btn ${viewMode === 'journey' ? 'active' : ''}`} onClick={() => startJourney()}>
-          🚀 Journey Mode
+        <button className={`mode-btn ${showAnalytics ? 'active' : ''}`} onClick={() => setShowAnalytics(!showAnalytics)}>
+          📊 Analytics
         </button>
-        <button className={`mode-btn ${showDiagramView ? 'active' : ''}`} onClick={() => setShowDiagramView(!showDiagramView)}>
-          📊 Diagrams
-        </button>
-        <button className={`mode-btn ${showMindMap ? 'active' : ''}`} onClick={() => setShowMindMap(!showMindMap)}>
-          🧠 Mind Map
+        <button className={`mode-btn ${showTemplateLibrary ? 'active' : ''}`} onClick={() => setShowTemplateLibrary(!showTemplateLibrary)}>
+          🎨 Templates
         </button>
         <button className="mode-btn settings-btn" onClick={() => setShowSettings(true)}>
           ⚙️ Settings
@@ -745,30 +850,73 @@ function App() {
             <div className="section-header">
               <h2>Your Notes</h2>
               <div className="header-controls">
-                <button className="btn btn-magic" onClick={applySmartFormatting} title="Smart Auto-Format">
+                <button className="btn btn-magic" onClick={applySmartFormatting}>
                   ✨ Make Aesthetic
                 </button>
-                <button className={`btn btn-voice ${isListening ? 'listening' : ''}`} onClick={toggleVoiceInput}>
-                  🎤 {isListening ? 'Listening...' : 'Voice'}
+                <button className={`btn ${focusMode ? 'btn-primary' : 'btn-secondary'}`} onClick={toggleFocusMode}>
+                  {focusMode ? '🎯 Focused' : '🎯 Focus'}
                 </button>
-                <button onClick={() => setRawText('')} className="btn btn-secondary">
-                  Clear
+                <button className={`btn btn-voice ${isListening ? 'listening' : ''}`} onClick={toggleVoiceInput}>
+                  🎤
                 </button>
               </div>
             </div>
+
+            {/* STAGE 10: Topic & Folder Selector */}
+            <div className="organization-bar">
+              <select value={currentFolder} onChange={(e) => setCurrentFolder(e.target.value)} className="folder-select">
+                {folders.map(folder => (
+                  <option key={folder} value={folder}>📁 {folder}</option>
+                ))}
+              </select>
+              
+              <select value={selectedTopic} onChange={(e) => applyTopicFormat(e.target.value)} className="topic-select">
+                <option value="general">📚 General</option>
+                <option value="math">🔢 Math</option>
+                <option value="science">🔬 Science</option>
+                <option value="history">📜 History</option>
+                <option value="languages">🗣️ Languages</option>
+                <option value="programming">💻 Programming</option>
+              </select>
+
+              <button className="btn btn-sm" onClick={() => setShowTagManager(!showTagManager)}>
+                🏷️ Tags ({currentNoteTags.length})
+              </button>
+              
+              <button className="btn btn-sm" onClick={addFolder}>➕ Folder</button>
+            </div>
+
+            {showTagManager && (
+              <div className="tag-manager">
+                <div className="tag-input-group">
+                  <input 
+                    type="text" 
+                    placeholder="Add tag..."
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && e.target.value) {
+                        addTag(e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                    className="tag-input"
+                  />
+                </div>
+                <div className="current-tags">
+                  {currentNoteTags.map(tag => (
+                    <span key={tag} className="tag">
+                      {tag}
+                      <button onClick={() => removeTag(tag)} className="tag-remove">×</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <textarea
               ref={textareaRef}
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
-              placeholder={`Type your notes here...
-
-✨ NEW: Click "Make Aesthetic" to auto-format!
-
-Or use:
-→ Arrows: -> <- ^ v
-📦 Boxes: [box]content[/box]
-🎨 Symbols: [!] [x] [?] [*]`}
+              placeholder="Type your notes here..."
               className="note-input"
             />
 
@@ -777,16 +925,7 @@ Or use:
                 <h4>Format</h4>
                 <button onClick={() => wrapSelection('**', '**')} className="tool-btn"><strong>B</strong></button>
                 <button onClick={() => wrapSelection('*', '*')} className="tool-btn"><em>I</em></button>
-                <button onClick={() => wrapSelection('__', '__')} className="tool-btn"><u>U</u></button>
                 <button onClick={() => wrapSelection('==', '==')} className="tool-btn"><mark>H</mark></button>
-              </div>
-
-              <div className="toolbar-section">
-                <h4>Symbols</h4>
-                <button onClick={() => insertSymbol(' → ')} className="tool-btn">→</button>
-                <button onClick={() => insertSymbol(' ← ')} className="tool-btn">←</button>
-                <button onClick={() => insertSymbol(' [!] ')} className="tool-btn">⚠️</button>
-                <button onClick={() => insertSymbol(' [x] ')} className="tool-btn">✓</button>
               </div>
 
               <div className="toolbar-section">
@@ -800,16 +939,6 @@ Or use:
               </div>
 
               <div className="toolbar-section">
-                <h4>Size</h4>
-                <select value={fontSize} onChange={(e) => setFontSize(e.target.value)}>
-                  <option value="small">Small</option>
-                  <option value="medium">Medium</option>
-                  <option value="large">Large</option>
-                  <option value="xlarge">X-Large</option>
-                </select>
-              </div>
-
-              <div className="toolbar-section">
                 <h4>Theme</h4>
                 <select value={selectedTheme} onChange={(e) => setSelectedTheme(e.target.value)}>
                   <option value="warm">Warm</option>
@@ -820,13 +949,14 @@ Or use:
                 </select>
               </div>
 
+              {/* STAGE 9: Layout Mode */}
               <div className="toolbar-section">
-                <h4>Template</h4>
-                <select value={selectedTemplate} onChange={(e) => setSelectedTemplate(e.target.value)}>
-                  <option value="default">Default</option>
-                  <option value="cornell">Cornell Notes</option>
-                  <option value="outline">Outline</option>
-                  <option value="flashcard">Flashcards</option>
+                <h4>Layout</h4>
+                <select value={layoutMode} onChange={(e) => changeLayoutMode(e.target.value)}>
+                  <option value="standard">Standard</option>
+                  <option value="magazine">Magazine</option>
+                  <option value="grid">Grid</option>
+                  <option value="minimal">Minimal</option>
                 </select>
               </div>
             </div>
@@ -846,6 +976,166 @@ Or use:
         </main>
       )}
 
+      {/* STAGE 7: AI CHAT PANEL */}
+      {showAIChat && (
+        <div className="ai-chat-panel">
+          <div className="chat-header">
+            <h2>💬 AI Study Assistant</h2>
+            <button onClick={() => setShowAIChat(false)} className="close-btn">✕</button>
+          </div>
+          
+          <div className="chat-messages">
+            {chatMessages.length === 0 && (
+              <div className="chat-welcome">
+                <h3>👋 Hi! I'm your AI study assistant</h3>
+                <p>Ask me to:</p>
+                <ul>
+                  <li>Explain concepts from your notes</li>
+                  <li>Summarize sections</li>
+                  <li>Generate quiz questions</li>
+                  <li>Suggest improvements</li>
+                </ul>
+              </div>
+            )}
+            {chatMessages.map((msg, i) => (
+              <div key={i} className={`chat-message ${msg.role}`}>
+                <div className="message-content">{msg.content}</div>
+              </div>
+            ))}
+            {isAIThinking && <div className="chat-message assistant thinking">Thinking...</div>}
+            <div ref={chatEndRef} />
+          </div>
+
+          <div className="chat-input-container">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && chatInput && sendMessageToAI(chatInput)}
+              placeholder="Ask me anything about your notes..."
+              className="chat-input"
+            />
+            <button onClick={() => chatInput && sendMessageToAI(chatInput)} className="btn btn-primary">
+              Send
+            </button>
+          </div>
+
+          <div className="focus-mode-controls">
+            <button onClick={toggleFocusMode} className={`btn ${focusMode ? 'btn-primary' : 'btn-secondary'}`}>
+              {focusMode ? '🎯 Focused' : '🎯 Focus Mode'}
+            </button>
+            <button 
+              onClick={pomodoroActive ? stopPomodoro : startPomodoro} 
+              className={`btn ${pomodoroActive ? 'btn-secondary' : 'btn-primary'}`}
+            >
+              {pomodoroActive ? `⏸️ ${formatPomodoroTime()}` : '⏱️ Pomodoro'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* STAGE 8: ANALYTICS DASHBOARD */}
+      {showAnalytics && (
+        <div className="analytics-overlay">
+          <div className="analytics-modal">
+            <div className="analytics-header">
+              <h2>📊 Study Analytics</h2>
+              <button onClick={() => setShowAnalytics(false)} className="close-btn">✕</button>
+            </div>
+
+            <div className="analytics-content">
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <div className="stat-icon">📝</div>
+                  <div className="stat-value">{studyStats.totalNotes}</div>
+                  <div className="stat-label">Total Notes</div>
+                </div>
+
+                <div className="stat-card">
+                  <div className="stat-icon">⏱️</div>
+                  <div className="stat-value">{formatStudyTime(studyStats.totalStudyTime)}</div>
+                  <div className="stat-label">Study Time</div>
+                </div>
+
+                <div className="stat-card">
+                  <div className="stat-icon">🔥</div>
+                  <div className="stat-value">{studyStats.currentStreak}</div>
+                  <div className="stat-label">Day Streak</div>
+                </div>
+
+                <div className="stat-card">
+                  <div className="stat-icon">🏆</div>
+                  <div className="stat-value">{studyStats.longestStreak}</div>
+                  <div className="stat-label">Best Streak</div>
+                </div>
+              </div>
+
+              <div className="analytics-section">
+                <h3>📚 Top Topics</h3>
+                <div className="topic-list">
+                  {getTopTopics().map(([topic, count]) => (
+                    <div key={topic} className="topic-item">
+                      <span className="topic-name">{topic}</span>
+                      <span className="topic-count">{count} notes</span>
+                    </div>
+                  ))}
+                  {getTopTopics().length === 0 && <p>No topics yet. Start taking notes!</p>}
+                </div>
+              </div>
+
+              <div className="analytics-section">
+                <h3>📈 This Week</h3>
+                <p className="week-stat">You've created {studyStats.notesThisWeek} notes this week!</p>
+                <p className="week-stat">Keep up the great work! 🎉</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STAGE 9: TEMPLATE LIBRARY */}
+      {showTemplateLibrary && (
+        <div className="template-overlay">
+          <div className="template-modal">
+            <div className="template-header">
+              <h2>🎨 Template Library</h2>
+              <button onClick={() => setShowTemplateLibrary(false)} className="close-btn">✕</button>
+            </div>
+
+            <div className="template-content">
+              <div className="template-grid">
+                <div className="template-card" onClick={() => setSelectedTemplate('cornell')}>
+                  <h3>Cornell Notes</h3>
+                  <p>Structured note-taking with cues and summary</p>
+                </div>
+
+                <div className="template-card" onClick={() => setSelectedTemplate('outline')}>
+                  <h3>Outline</h3>
+                  <p>Hierarchical organization</p>
+                </div>
+
+                <div className="template-card" onClick={() => setSelectedTemplate('flashcard')}>
+                  <h3>Flashcards</h3>
+                  <p>Question-answer format</p>
+                </div>
+
+                <div className="template-card" onClick={saveCustomTemplate}>
+                  <h3>💾 Save Custom</h3>
+                  <p>Save current as template</p>
+                </div>
+
+                {customTemplate && (
+                  <div className="template-card" onClick={loadCustomTemplate}>
+                    <h3>📄 {customTemplate.name}</h3>
+                    <p>Your custom template</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* STAGE 6: SETTINGS MODAL */}
       {showSettings && (
         <div className="settings-overlay">
@@ -856,117 +1146,36 @@ Or use:
             </div>
 
             <div className="settings-content">
-              <p className="settings-description">
-                Choose which automatic transformations to apply when you click "✨ Make Aesthetic"
-              </p>
-
               <div className="settings-grid">
-                <div className="setting-item">
-                  <label className="setting-label">
-                    <input type="checkbox" checked={autoFormatSettings.enhanceTopics}
-                      onChange={(e) => saveSettings({...autoFormatSettings, enhanceTopics: e.target.checked})} />
-                    <div className="setting-info">
-                      <h4>📏 Enhance Main Topics</h4>
-                      <p>Detect and convert main topics to larger, bold headings</p>
-                      <span className="example">Example: "PHOTOSYNTHESIS" → # PHOTOSYNTHESIS</span>
-                    </div>
-                  </label>
-                </div>
-
-                <div className="setting-item">
-                  <label className="setting-label">
-                    <input type="checkbox" checked={autoFormatSettings.enhanceSubtopics}
-                      onChange={(e) => saveSettings({...autoFormatSettings, enhanceSubtopics: e.target.checked})} />
-                    <div className="setting-info">
-                      <h4>→ Format Subtopics</h4>
-                      <p>Add arrows (→) or bullets to subtopics under headings</p>
-                      <span className="example">Example: "Cell structure" → → Cell structure</span>
-                    </div>
-                  </label>
-                </div>
-
-                <div className="setting-item">
-                  <label className="setting-label">
-                    <input type="checkbox" checked={autoFormatSettings.highlightKeywords}
-                      onChange={(e) => saveSettings({...autoFormatSettings, highlightKeywords: e.target.checked})} />
-                    <div className="setting-info">
-                      <h4>🎨 Highlight Keywords</h4>
-                      <p>Auto-highlight important words (important, key, essential, etc.)</p>
-                      <span className="example">Example: "This is important" → This is ==important==</span>
-                    </div>
-                  </label>
-                </div>
-
-                <div className="setting-item">
-                  <label className="setting-label">
-                    <input type="checkbox" checked={autoFormatSettings.formatDefinitions}
-                      onChange={(e) => saveSettings({...autoFormatSettings, formatDefinitions: e.target.checked})} />
-                    <div className="setting-info">
-                      <h4>📖 Format Definitions</h4>
-                      <p>Convert "Term: definition" into bold term with italic definition</p>
-                      <span className="example">Example: "Atom: smallest unit" → **Atom**: *smallest unit*</span>
-                    </div>
-                  </label>
-                </div>
-
-                <div className="setting-item">
-                  <label className="setting-label">
-                    <input type="checkbox" checked={autoFormatSettings.detectQuestions}
-                      onChange={(e) => saveSettings({...autoFormatSettings, detectQuestions: e.target.checked})} />
-                    <div className="setting-info">
-                      <h4>❓ Detect Questions</h4>
-                      <p>Add question icons to sentences ending with ?</p>
-                      <span className="example">Example: "What is DNA?" → [?] What is DNA?</span>
-                    </div>
-                  </label>
-                </div>
-
-                <div className="setting-item">
-                  <label className="setting-label">
-                    <input type="checkbox" checked={autoFormatSettings.addIcons}
-                      onChange={(e) => saveSettings({...autoFormatSettings, addIcons: e.target.checked})} />
-                    <div className="setting-info">
-                      <h4>🎭 Add Context Icons</h4>
-                      <p>Add icons based on content (✓ for completed, ⚠️ for important, etc.)</p>
-                      <span className="example">Example: "Task completed" → [x] Task completed</span>
-                    </div>
-                  </label>
-                </div>
-
-                <div className="setting-item">
-                  <label className="setting-label">
-                    <input type="checkbox" checked={autoFormatSettings.improveSpacing}
-                      onChange={(e) => saveSettings({...autoFormatSettings, improveSpacing: e.target.checked})} />
-                    <div className="setting-info">
-                      <h4>📏 Improve Spacing</h4>
-                      <p>Add proper spacing around headings and sections for better readability</p>
-                      <span className="example">Adds blank lines before/after headings automatically</span>
-                    </div>
-                  </label>
-                </div>
-
-                <div className="setting-item">
-                  <label className="setting-label">
-                    <input type="checkbox" checked={autoFormatSettings.colorCode}
-                      onChange={(e) => saveSettings({...autoFormatSettings, colorCode: e.target.checked})} />
-                    <div className="setting-info">
-                      <h4>🎨 Color-Code Content</h4>
-                      <p>Wrap content in colored boxes based on keywords (warning, tip, example)</p>
-                      <span className="example">Example: "Warning: Study this" → [warning]...[/warning]</span>
-                    </div>
-                  </label>
-                </div>
+                {Object.entries({
+                  enhanceTopics: { title: '📏 Enhance Main Topics', desc: 'Convert topics to headings' },
+                  enhanceSubtopics: { title: '→ Format Subtopics', desc: 'Add arrows to subtopics' },
+                  highlightKeywords: { title: '🎨 Highlight Keywords', desc: 'Auto-highlight important words' },
+                  formatDefinitions: { title: '📖 Format Definitions', desc: 'Format term: definition' },
+                  detectQuestions: { title: '❓ Detect Questions', desc: 'Add icons to questions' },
+                  addIcons: { title: '🎭 Add Context Icons', desc: 'Smart icons based on meaning' },
+                  improveSpacing: { title: '📏 Improve Spacing', desc: 'Better readability' },
+                  colorCode: { title: '🎨 Color-Code Content', desc: 'Colored boxes by type' }
+                }).map(([key, { title, desc }]) => (
+                  <div key={key} className="setting-item">
+                    <label className="setting-label">
+                      <input
+                        type="checkbox"
+                        checked={autoFormatSettings[key]}
+                        onChange={(e) => saveSettings({ ...autoFormatSettings, [key]: e.target.checked })}
+                      />
+                      <div className="setting-info">
+                        <h4>{title}</h4>
+                        <p>{desc}</p>
+                      </div>
+                    </label>
+                  </div>
+                ))}
               </div>
 
               <div className="settings-footer">
-                <button className="btn btn-primary" onClick={() => {
-                  applySmartFormatting();
-                  setShowSettings(false);
-                }}>
+                <button className="btn btn-primary" onClick={() => { applySmartFormatting(); setShowSettings(false); }}>
                   ✨ Apply & Format Now
-                </button>
-                <button className="btn btn-secondary" onClick={() => setShowSettings(false)}>
-                  Close
                 </button>
               </div>
             </div>
@@ -974,85 +1183,42 @@ Or use:
         </div>
       )}
 
-      {/* Book View, Journey, Diagrams, Mind Map - same as before */}
-      {viewMode === 'book' && (
-        <div className="book-view">
-          <div className="book-container">
-            <div className="book-page">
-              <div className="page-content" dangerouslySetInnerHTML={{ __html: formatText(splitIntoPages()[currentPage] || '') }} />
-              <div className="page-number">Page {currentPage + 1} of {splitIntoPages().length}</div>
-            </div>
-            <div className="book-controls">
-              <button onClick={prevPage} disabled={currentPage === 0} className="btn btn-primary">← Previous</button>
-              <button onClick={nextPage} disabled={currentPage >= splitIntoPages().length - 1} className="btn btn-primary">Next →</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showDiagramView && (
-        <div className="diagram-overlay">
-          <div className="diagram-container">
-            <div className="diagram-header">
-              <h2>📊 Visual Diagram</h2>
-              <select value={diagramType} onChange={(e) => setDiagramType(e.target.value)}>
-                <option value="flowchart">Flowchart</option>
-                <option value="mindmap">Mind Map</option>
-              </select>
-              <button onClick={() => setShowDiagramView(false)} className="btn btn-secondary">✕</button>
-            </div>
-            <div className="diagram-content">
-              <pre className="mermaid-code">{generateDiagram()}</pre>
-              <p className="diagram-info">
-                💡 Copy this code to <a href="https://mermaid.live" target="_blank" rel="noopener noreferrer">Mermaid Live</a> to visualize!
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showMindMap && (
-        <div className="mindmap-overlay">
-          <div className="mindmap-container">
-            <div className="mindmap-header">
-              <h2>🧠 Mind Map</h2>
-              <button onClick={() => setShowMindMap(false)} className="btn btn-secondary">✕</button>
-            </div>
-            <svg className="mindmap-svg" width="100%" height="600">
-              {generateMindMapData().nodes.map((node) => (
-                <g key={node.id}>
-                  <circle cx={node.x} cy={node.y} r="30" fill="#d4a574" />
-                  <text x={node.x} y={node.y} textAnchor="middle" dy=".3em" fill="white" fontSize="12">
-                    {node.label.substring(0, 10)}
-                  </text>
-                </g>
-              ))}
-              {generateMindMapData().edges.map((edge, i) => {
-                const fromNode = generateMindMapData().nodes.find(n => n.id === edge.from);
-                const toNode = generateMindMapData().nodes.find(n => n.id === edge.to);
-                return fromNode && toNode ? (
-                  <line key={i} x1={fromNode.x} y1={fromNode.y} x2={toNode.x} y2={toNode.y}
-                    stroke="#8b6f47" strokeWidth="2" />
-                ) : null;
-              })}
-            </svg>
-          </div>
-        </div>
-      )}
-
+      {/* Saved Notes Sidebar */}
       <aside className={`saved-notes-sidebar ${showSidebar ? 'active' : ''}`}>
         <div className="sidebar-header">
           <h3>Saved Notes</h3>
           <button onClick={() => setShowSidebar(false)} className="close-btn">✕</button>
         </div>
+
+        {/* STAGE 10: Search */}
+        <div className="sidebar-search">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="🔍 Search notes..."
+            className="search-input"
+          />
+        </div>
+
         <div className="saved-notes-list">
-          {savedNotes.length === 0 ? (
-            <p className="no-notes">No saved notes yet</p>
+          {(searchQuery ? searchNotes(searchQuery) : savedNotes).length === 0 ? (
+            <p className="no-notes">No notes found</p>
           ) : (
-            savedNotes.slice().reverse().map((note) => (
+            (searchQuery ? searchNotes(searchQuery) : savedNotes).slice().reverse().map((note) => (
               <div key={note.id} className="saved-note-item">
                 <h4>{note.title}</h4>
-                <p className="note-date">{formatDate(note.createdAt)}</p>
+                <div className="note-meta">
+                  <span className="note-folder">📁 {note.folder || 'General'}</span>
+                  <span className="note-date">{formatDate(note.createdAt)}</span>
+                </div>
+                {note.tags && note.tags.length > 0 && (
+                  <div className="note-tags">
+                    {note.tags.map(tag => (
+                      <span key={tag} className="tag-small">{tag}</span>
+                    ))}
+                  </div>
+                )}
                 <div className="note-actions">
                   <button onClick={() => loadNote(note)} className="btn btn-sm btn-primary">Load</button>
                   <button onClick={() => deleteNote(note.id)} className="btn btn-sm btn-secondary">Delete</button>
@@ -1064,7 +1230,7 @@ Or use:
       </aside>
 
       <button onClick={() => setShowSidebar(!showSidebar)} className="toggle-sidebar-btn">
-        📚 Saved ({savedNotes.length})
+        📚 Notes ({savedNotes.length})
       </button>
 
       {notification && (
@@ -1072,6 +1238,9 @@ Or use:
           {notification.message}
         </div>
       )}
+
+      {/* Focus Mode Overlay */}
+      {focusMode && <div className="focus-overlay" />}
     </div>
   );
 }
