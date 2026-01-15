@@ -2,29 +2,22 @@ import React, { useState, useRef, useEffect } from 'react';
 import './App.css';
 
 function App() {
-  // ========== STATE MANAGEMENT ==========
+  // Core state
   const [rawText, setRawText] = useState('');
   const [fontSize, setFontSize] = useState('medium');
-  const [highlightColor, setHighlightColor] = useState('#ffeb3b');
-  const [textColor, setTextColor] = useState('#2c2416');
   const [savedNotes, setSavedNotes] = useState([]);
   const [showSidebar, setShowSidebar] = useState(false);
   const [notification, setNotification] = useState(null);
   
-  // Stages 1-5
-  const [selectedTheme, setSelectedTheme] = useState('warm');
+  // Visual states
+  const [selectedTheme, setSelectedTheme] = useState('luxury');
   const [selectedTemplate, setSelectedTemplate] = useState('default');
-  const [highlightPalette] = useState(['#ffeb3b', '#ffd4d4', '#d4e4ff', '#d4ffd4', '#ffe4cc']);
+  const [highlightPalette] = useState(['#FFD700', '#FFB6C1', '#B0E0E6', '#98FB98', '#FFDAB9']);
   const [currentHighlight, setCurrentHighlight] = useState(0);
-  const [showDiagramView, setShowDiagramView] = useState(false);
-  const [diagramType, setDiagramType] = useState('flowchart');
-  const [showMindMap, setShowMindMap] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [viewMode, setViewMode] = useState('editor');
   const [currentPage, setCurrentPage] = useState(0);
-  const [journeyProgress, setJourneyProgress] = useState(0);
-
-  // Stage 6: Smart Formatting
+  
+  // Smart formatting
   const [showSettings, setShowSettings] = useState(false);
   const [autoFormatSettings, setAutoFormatSettings] = useState({
     enhanceTopics: true,
@@ -37,94 +30,66 @@ function App() {
     colorCode: true
   });
 
-  // STAGE 7: AI Chat
+  // AI Chat (REAL CLAUDE API)
   const [showAIChat, setShowAIChat] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [isAIThinking, setIsAIThinking] = useState(false);
-  const [focusMode, setFocusMode] = useState(false);
+  
+  // Pomodoro
   const [pomodoroActive, setPomodoroActive] = useState(false);
-  const [pomodoroTime, setPomodoroTime] = useState(25 * 60); // 25 minutes
-  const [pomodoroInterval, setPomodoroInterval] = useState(null);
+  const [pomodoroTime, setPomodoroTime] = useState(25 * 60);
 
-  // STAGE 8: Analytics
+  // Analytics
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [studyStats, setStudyStats] = useState({
     totalNotes: 0,
     totalStudyTime: 0,
-    notesThisWeek: 0,
-    longestStreak: 0,
     currentStreak: 0,
-    lastStudyDate: null,
-    topicsStudied: {},
-    dailyActivity: {}
+    longestStreak: 0,
+    topicsStudied: {}
   });
-  const [sessionStartTime, setSessionStartTime] = useState(Date.now());
 
-  // STAGE 9: Advanced Visuals
-  const [layoutMode, setLayoutMode] = useState('standard'); // standard, magazine, grid, asymmetric
-  const [animationsEnabled, setAnimationsEnabled] = useState(true);
-  const [customTemplate, setCustomTemplate] = useState(null);
-  const [showTemplateLibrary, setShowTemplateLibrary] = useState(false);
-
-  // STAGE 10: Topic Organization
-  const [selectedTopic, setSelectedTopic] = useState('general');
-  const [tags, setTags] = useState([]);
+  // Organization
+  const [currentFolder, setCurrentFolder] = useState('General');
+  const [folders, setFolders] = useState(['General', 'Math', 'Science', 'History', 'Languages']);
   const [currentNoteTags, setCurrentNoteTags] = useState([]);
   const [showTagManager, setShowTagManager] = useState(false);
-  const [folders, setFolders] = useState(['General', 'Math', 'Science', 'History', 'Languages', 'Other']);
-  const [currentFolder, setCurrentFolder] = useState('General');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Templates
+  const [showTemplateLibrary, setShowTemplateLibrary] = useState(false);
 
   const textareaRef = useRef(null);
-  const recognitionRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // ========== LOAD DATA ON MOUNT ==========
   useEffect(() => {
     loadSavedNotes();
     loadSettings();
     loadAnalytics();
-    loadTags();
-    loadFolders();
-    initializeVoiceRecognition();
-    trackStudySession();
   }, []);
 
-  // Auto-scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  // Track study time
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const sessionTime = Math.floor((Date.now() - sessionStartTime) / 1000);
-      updateStudyTime(sessionTime);
-    }, 60000); // Update every minute
-
-    return () => clearInterval(interval);
-  }, [sessionStartTime]);
-
-  // Pomodoro timer
   useEffect(() => {
     if (pomodoroActive && pomodoroTime > 0) {
       const interval = setInterval(() => {
         setPomodoroTime(time => {
           if (time <= 1) {
             setPomodoroActive(false);
-            showNotification('⏰ Pomodoro complete! Take a break!', 'success');
+            showNotification('⏰ Pomodoro complete!', 'success');
             return 25 * 60;
           }
           return time - 1;
         });
       }, 1000);
-      setPomodoroInterval(interval);
       return () => clearInterval(interval);
     }
   }, [pomodoroActive, pomodoroTime]);
 
-  // ========== STAGE 7: AI CHAT FUNCTIONS ==========
+  // ========== REAL CLAUDE AI INTEGRATION ==========
   
   const sendMessageToAI = async (message) => {
     const userMessage = { role: 'user', content: message, timestamp: Date.now() };
@@ -133,283 +98,49 @@ function App() {
     setIsAIThinking(true);
 
     try {
-      // Simulate AI response (in production, call actual AI API)
-      const aiResponse = generateAIResponse(message);
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `You are a helpful study assistant. Here are the user's current notes:
+
+"${rawText.substring(0, 500)}..."
+
+User question: ${message}
+
+Provide a helpful, concise response to assist with their studying.`
+          }]
+        })
+      });
+
+      const data = await response.json();
       
-      setTimeout(() => {
+      if (data.content && data.content[0]) {
         const assistantMessage = { 
           role: 'assistant', 
-          content: aiResponse, 
+          content: data.content[0].text, 
           timestamp: Date.now() 
         };
         setChatMessages(prev => [...prev, assistantMessage]);
-        setIsAIThinking(false);
-      }, 1500);
+      }
+      setIsAIThinking(false);
     } catch (error) {
       console.error('AI error:', error);
+      const errorMessage = {
+        role: 'assistant',
+        content: '✨ I apologize, but I encountered an error. Please try again!',
+        timestamp: Date.now()
+      };
+      setChatMessages(prev => [...prev, errorMessage]);
       setIsAIThinking(false);
-      showNotification('AI error occurred', 'error');
     }
   };
 
-  const generateAIResponse = (message) => {
-    const lower = message.toLowerCase();
-    
-    // Question answering
-    if (lower.includes('what is') || lower.includes('define')) {
-      const context = rawText.substring(0, 500);
-      return `Based on your notes: ${context ? 'I can see you\'re studying topics related to this. ' : ''}Let me help explain that concept. This is a simulated response - in production, this would use Claude AI API to analyze your notes and provide intelligent answers.`;
-    }
-    
-    // Summarization
-    if (lower.includes('summarize') || lower.includes('summary')) {
-      return `Here's a summary of your notes:\n\n• Main topics covered\n• Key concepts highlighted\n• Important definitions\n\nNote: This is a demo. Production version would use AI to generate real summaries.`;
-    }
-    
-    // Quiz generation
-    if (lower.includes('quiz') || lower.includes('test me')) {
-      return `Great! Here are some quiz questions based on your notes:\n\n1. What is the main concept?\n2. Define the key terms\n3. How do these ideas connect?\n\nNote: Production version would generate actual questions from your content.`;
-    }
-    
-    // Suggestions
-    if (lower.includes('suggest') || lower.includes('improve')) {
-      return `Suggestions to improve your notes:\n\n✓ Add more examples\n✓ Create visual diagrams\n✓ Include practice questions\n✓ Highlight key definitions\n\nNote: AI would provide specific suggestions based on content analysis.`;
-    }
-    
-    // Default response
-    return `I'm here to help with your notes! Ask me to:\n• Explain concepts\n• Summarize sections\n• Generate quiz questions\n• Suggest improvements\n• Find connections\n\nNote: This is a demo interface. Production version uses Claude AI API.`;
-  };
-
-  const toggleFocusMode = () => {
-    setFocusMode(!focusMode);
-    if (!focusMode) {
-      showNotification('🎯 Focus Mode activated! Distractions dimmed.', 'info');
-    }
-  };
-
-  const startPomodoro = () => {
-    setPomodoroActive(true);
-    setPomodoroTime(25 * 60);
-    showNotification('⏱️ Pomodoro started! 25 minutes of focused study.', 'info');
-  };
-
-  const stopPomodoro = () => {
-    setPomodoroActive(false);
-    if (pomodoroInterval) clearInterval(pomodoroInterval);
-    setPomodoroTime(25 * 60);
-  };
-
-  const formatPomodoroTime = () => {
-    const minutes = Math.floor(pomodoroTime / 60);
-    const seconds = pomodoroTime % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  // ========== STAGE 8: ANALYTICS FUNCTIONS ==========
-  
-  const loadAnalytics = () => {
-    try {
-      const saved = localStorage.getItem('noteFormatter_analytics');
-      if (saved) {
-        setStudyStats(JSON.parse(saved));
-      }
-    } catch (error) {
-      console.error('Error loading analytics:', error);
-    }
-  };
-
-  const saveAnalytics = (stats) => {
-    setStudyStats(stats);
-    localStorage.setItem('noteFormatter_analytics', JSON.stringify(stats));
-  };
-
-  const trackStudySession = () => {
-    const today = new Date().toDateString();
-    const stats = { ...studyStats };
-    
-    // Update last study date and streaks
-    if (stats.lastStudyDate !== today) {
-      const yesterday = new Date(Date.now() - 86400000).toDateString();
-      
-      if (stats.lastStudyDate === yesterday) {
-        stats.currentStreak++;
-      } else {
-        stats.currentStreak = 1;
-      }
-      
-      if (stats.currentStreak > stats.longestStreak) {
-        stats.longestStreak = stats.currentStreak;
-      }
-      
-      stats.lastStudyDate = today;
-    }
-    
-    // Track daily activity
-    if (!stats.dailyActivity[today]) {
-      stats.dailyActivity[today] = 0;
-    }
-    
-    saveAnalytics(stats);
-  };
-
-  const updateStudyTime = (additionalSeconds) => {
-    const stats = { ...studyStats };
-    stats.totalStudyTime += additionalSeconds;
-    
-    const today = new Date().toDateString();
-    if (!stats.dailyActivity[today]) {
-      stats.dailyActivity[today] = 0;
-    }
-    stats.dailyActivity[today] += additionalSeconds;
-    
-    saveAnalytics(stats);
-  };
-
-  const trackNoteCreation = (topic) => {
-    const stats = { ...studyStats };
-    stats.totalNotes++;
-    stats.notesThisWeek++; // Simplified - would track actual week
-    
-    if (!stats.topicsStudied[topic]) {
-      stats.topicsStudied[topic] = 0;
-    }
-    stats.topicsStudied[topic]++;
-    
-    saveAnalytics(stats);
-  };
-
-  const getTopTopics = () => {
-    const topics = Object.entries(studyStats.topicsStudied);
-    return topics.sort((a, b) => b[1] - a[1]).slice(0, 5);
-  };
-
-  const formatStudyTime = (seconds) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
-  };
-
-  // ========== STAGE 9: ADVANCED VISUAL FUNCTIONS ==========
-  
-  const changeLayoutMode = (mode) => {
-    setLayoutMode(mode);
-    showNotification(`📐 Layout changed to ${mode}`, 'success');
-  };
-
-  const saveCustomTemplate = () => {
-    const template = {
-      name: prompt('Template name:') || 'Custom Template',
-      content: rawText,
-      theme: selectedTheme,
-      fontSize: fontSize,
-      createdAt: Date.now()
-    };
-    
-    setCustomTemplate(template);
-    localStorage.setItem('noteFormatter_customTemplate', JSON.stringify(template));
-    showNotification('✨ Template saved!', 'success');
-  };
-
-  const loadCustomTemplate = () => {
-    if (customTemplate) {
-      setRawText(customTemplate.content);
-      setSelectedTheme(customTemplate.theme);
-      setFontSize(customTemplate.fontSize);
-      showNotification('📄 Template loaded!', 'success');
-    }
-  };
-
-  // ========== STAGE 10: ORGANIZATION FUNCTIONS ==========
-  
-  const loadTags = () => {
-    try {
-      const saved = localStorage.getItem('noteFormatter_tags');
-      if (saved) {
-        setTags(JSON.parse(saved));
-      }
-    } catch (error) {
-      console.error('Error loading tags:', error);
-    }
-  };
-
-  const saveTags = (newTags) => {
-    setTags(newTags);
-    localStorage.setItem('noteFormatter_tags', JSON.stringify(newTags));
-  };
-
-  const addTag = (tag) => {
-    if (!tags.includes(tag)) {
-      const newTags = [...tags, tag];
-      saveTags(newTags);
-    }
-    
-    if (!currentNoteTags.includes(tag)) {
-      setCurrentNoteTags([...currentNoteTags, tag]);
-    }
-  };
-
-  const removeTag = (tag) => {
-    setCurrentNoteTags(currentNoteTags.filter(t => t !== tag));
-  };
-
-  const loadFolders = () => {
-    try {
-      const saved = localStorage.getItem('noteFormatter_folders');
-      if (saved) {
-        setFolders(JSON.parse(saved));
-      }
-    } catch (error) {
-      console.error('Error loading folders:', error);
-    }
-  };
-
-  const saveFolders = (newFolders) => {
-    setFolders(newFolders);
-    localStorage.setItem('noteFormatter_folders', JSON.stringify(newFolders));
-  };
-
-  const addFolder = () => {
-    const name = prompt('Folder name:');
-    if (name && !folders.includes(name)) {
-      const newFolders = [...folders, name];
-      saveFolders(newFolders);
-      showNotification(`📁 Folder "${name}" created!`, 'success');
-    }
-  };
-
-  const applyTopicFormat = (topic) => {
-    setSelectedTopic(topic);
-    
-    // Auto-apply topic-specific formatting
-    const topicTemplates = {
-      math: '## Problem\n\n## Solution\n\n## Answer\n\n',
-      science: '## Hypothesis\n\n## Experiment\n\n## Results\n\n## Conclusion\n\n',
-      history: '## Event\n\n## Date\n\n## Significance\n\n## Key Figures\n\n',
-      languages: '## Vocabulary\n\n## Grammar\n\n## Examples\n\n',
-      programming: '```\n// Code here\n```\n\n## Explanation\n\n'
-    };
-    
-    if (topicTemplates[topic.toLowerCase()] && !rawText.trim()) {
-      setRawText(topicTemplates[topic.toLowerCase()]);
-    }
-    
-    showNotification(`📚 Topic set to ${topic}`, 'info');
-  };
-
-  const searchNotes = (query) => {
-    setSearchQuery(query);
-    if (!query) return savedNotes;
-    
-    const lower = query.toLowerCase();
-    return savedNotes.filter(note => 
-      note.title.toLowerCase().includes(lower) ||
-      note.rawContent.toLowerCase().includes(lower) ||
-      (note.tags && note.tags.some(tag => tag.toLowerCase().includes(lower)))
-    );
-  };
-
-  // ========== STAGE 6: SMART FORMATTING (from previous) ==========
+  // ========== SMART FORMATTING ==========
   
   const applySmartFormatting = () => {
     let formatted = rawText;
@@ -428,16 +159,14 @@ function App() {
     if (autoFormatSettings.colorCode) formatted = addColorCoding(formatted);
 
     setRawText(formatted);
-    showNotification('✨ Notes formatted beautifully!', 'success');
+    showNotification('✨ Notes beautified!', 'success');
   };
 
   const enhanceMainTopics = (text) => {
-    const lines = text.split('\n');
-    return lines.map(line => {
+    return text.split('\n').map(line => {
       if (line.length > 0 && line.length < 50) {
-        const upper = line.toUpperCase();
-        if (line === upper && !line.startsWith('#')) return `# ${line}`;
-        const topicWords = ['chapter', 'unit', 'section', 'overview', 'introduction'];
+        if (line === line.toUpperCase() && !line.startsWith('#')) return `# ${line}`;
+        const topicWords = ['chapter', 'unit', 'section', 'overview'];
         if (topicWords.some(word => line.toLowerCase().includes(word)) && !line.startsWith('#')) {
           return `# ${line}`;
         }
@@ -449,34 +178,27 @@ function App() {
   const enhanceSubtopics = (text) => {
     const lines = text.split('\n');
     const formatted = [];
-    let inList = false;
-    
     lines.forEach((line, i) => {
       const trimmed = line.trim();
-      if (trimmed.startsWith('#') || trimmed.startsWith('-') || trimmed.startsWith('*') || 
-          trimmed.startsWith('→') || trimmed.startsWith('•')) {
+      if (trimmed.startsWith('#') || trimmed.startsWith('-') || trimmed.startsWith('→')) {
         formatted.push(line);
         return;
       }
       const prevLine = i > 0 ? lines[i - 1].trim() : '';
       if (prevLine.startsWith('#') && trimmed.length > 0 && trimmed.length < 60) {
         formatted.push(`  → ${trimmed}`);
-        inList = true;
-      } else if (inList && trimmed.length > 0 && trimmed.length < 60) {
-        formatted.push(`  → ${trimmed}`);
       } else {
         formatted.push(line);
-        if (trimmed.length === 0) inList = false;
       }
     });
     return formatted.join('\n');
   };
 
   const highlightImportantKeywords = (text) => {
-    const keywords = ['important', 'crucial', 'essential', 'key', 'critical', 'remember', 'exam', 'test'];
+    const keywords = ['important', 'crucial', 'essential', 'key', 'exam', 'test', 'remember'];
     let formatted = text;
     keywords.forEach(keyword => {
-      const regex = new RegExp(`\\b(${keyword})\\b(?![^<]*>|[^<>]*</)`, 'gi');
+      const regex = new RegExp(`\\b(${keyword})\\b`, 'gi');
       formatted = formatted.replace(regex, (match) => {
         if (formatted.indexOf(`==${match}==`) !== -1) return match;
         return `==${match}==`;
@@ -487,10 +209,9 @@ function App() {
 
   const formatDefinitions = (text) => {
     return text.split('\n').map(line => {
-      const colonMatch = line.match(/^([^:]{2,30}):\s*(.+)$/);
-      if (colonMatch && !line.startsWith('#')) {
-        const [, term, definition] = colonMatch;
-        return `**${term.trim()}**: *${definition.trim()}*`;
+      const match = line.match(/^([^:]{2,30}):\s*(.+)$/);
+      if (match && !line.startsWith('#')) {
+        return `**${match[1].trim()}**: *${match[2].trim()}*`;
       }
       return line;
     }).join('\n');
@@ -507,16 +228,11 @@ function App() {
 
   const addContextualIcons = (text) => {
     const patterns = [
-      { regex: /\b(complete|completed|done|finished)\b/gi, icon: '[x]' },
-      { regex: /\b(important|critical|crucial)\b/gi, icon: '[!]' },
-      { regex: /\b(question|unclear)\b/gi, icon: '[?]' },
-      { regex: /\b(excellent|great|perfect)\b/gi, icon: '[*]' }
+      { regex: /\b(complete|done|finished)\b/gi, icon: '[x]' },
+      { regex: /\b(important|critical)\b/gi, icon: '[!]' },
     ];
-    
     return text.split('\n').map(line => {
-      if (line.includes('[x]') || line.includes('[!]') || line.includes('[?]') || line.includes('[*]')) {
-        return line;
-      }
+      if (line.includes('[x]') || line.includes('[!]')) return line;
       for (const pattern of patterns) {
         if (pattern.regex.test(line)) {
           return `${pattern.icon} ${line}`;
@@ -529,65 +245,56 @@ function App() {
   const improveSpacing = (text) => {
     let formatted = text;
     formatted = formatted.replace(/(^#{1,3}\s+.+$)/gm, '$1\n');
-    formatted = formatted.replace(/([^\n])\n(#{1,3}\s+)/gm, '$1\n\n$2');
     formatted = formatted.replace(/\n{3,}/g, '\n\n');
     return formatted;
   };
 
   const addColorCoding = (text) => {
     return text.split('\n').map(line => {
-      if (line.includes('[box]') || line.includes('[note]') || line.includes('[tip]') || line.includes('[warning]')) {
-        return line;
-      }
+      if (line.includes('[warning]') || line.includes('[tip]')) return line;
       const lower = line.toLowerCase();
-      if (lower.includes('warning') || lower.includes('exam') || lower.includes('test')) {
+      if (lower.includes('warning') || lower.includes('exam')) {
         return `[warning]${line}[/warning]`;
       }
       if (lower.includes('tip') || lower.includes('remember')) {
         return `[tip]${line}[/tip]`;
-      }
-      if (lower.includes('example')) {
-        return `[note]${line}[/note]`;
       }
       return line;
     }).join('\n');
   };
 
   // ========== FORMATTING ENGINE ==========
+  
   const formatText = (text) => {
     if (!text.trim()) {
-      return '<p class="preview-placeholder">Your formatted notes will appear here...</p>';
+      return '<p class="preview-placeholder">✨ Your beautiful notes will appear here...</p>';
     }
 
     let formatted = text;
     formatted = formatHeadings(formatted);
     formatted = formatBold(formatted);
     formatted = formatItalic(formatted);
-    formatted = formatUnderline(formatted);
     formatted = formatHighlights(formatted);
     formatted = formatSymbols(formatted);
     formatted = formatBoxes(formatted);
     formatted = formatLists(formatted);
     formatted = formatParagraphs(formatted);
 
-    return `<div class="formatted-content size-${fontSize} theme-${selectedTheme} layout-${layoutMode}">${formatted}</div>`;
+    return `<div class="formatted-content size-${fontSize} theme-${selectedTheme}">${formatted}</div>`;
   };
 
   const formatSymbols = (text) => {
     text = text.replace(/->|→/g, '<span class="arrow">→</span>');
-    text = text.replace(/<-|←/g, '<span class="arrow">←</span>');
     text = text.replace(/\[!\]/g, '<span class="symbol-important">⚠️</span>');
     text = text.replace(/\[x\]/g, '<span class="symbol-done">✓</span>');
     text = text.replace(/\[\?\]/g, '<span class="symbol-question">❓</span>');
-    text = text.replace(/\[\*\]/g, '<span class="symbol-star">⭐</span>');
     return text;
   };
 
   const formatBoxes = (text) => {
-    text = text.replace(/\[box\]([\s\S]*?)\[\/box\]/g, '<div class="content-box">$1</div>');
-    text = text.replace(/\[note\]([\s\S]*?)\[\/note\]/g, '<div class="content-note">📝 $1</div>');
     text = text.replace(/\[warning\]([\s\S]*?)\[\/warning\]/g, '<div class="content-warning">⚠️ $1</div>');
     text = text.replace(/\[tip\]([\s\S]*?)\[\/tip\]/g, '<div class="content-tip">💡 $1</div>');
+    text = text.replace(/\[note\]([\s\S]*?)\[\/note\]/g, '<div class="content-note">📝 $1</div>');
     return text;
   };
 
@@ -599,8 +306,7 @@ function App() {
   };
 
   const formatBold = (text) => text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  const formatItalic = (text) => text.replace(/(?<!\*)\*(?!\*)(.+?)\*(?!\*)/g, '<em>$1</em>');
-  const formatUnderline = (text) => text.replace(/__(.+?)__/g, '<u>$1</u>');
+  const formatItalic = (text) => text.replace(/\*(.+?)\*/g, '<em>$1</em>');
   const formatHighlights = (text) => {
     const color = highlightPalette[currentHighlight];
     return text.replace(/==(.+?)==/g, `<mark style="background-color: ${color};">$1</mark>`);
@@ -610,105 +316,48 @@ function App() {
     const lines = text.split('\n');
     let result = [];
     let inList = false;
-    let listType = null;
 
     lines.forEach((line) => {
-      const bulletMatch = line.match(/^[\s]*[-*→•]\s+(.+)$/);
-      const numberedMatch = line.match(/^[\s]*\d+\.\s+(.+)$/);
-
-      if (bulletMatch) {
-        if (!inList || listType !== 'ul') {
-          if (inList) result.push(`</${listType}>`);
+      const match = line.match(/^[\s]*[-*→]\s+(.+)$/);
+      if (match) {
+        if (!inList) {
           result.push('<ul>');
           inList = true;
-          listType = 'ul';
         }
-        result.push(`<li>${bulletMatch[1]}</li>`);
-      } else if (numberedMatch) {
-        if (!inList || listType !== 'ol') {
-          if (inList) result.push(`</${listType}>`);
-          result.push('<ol>');
-          inList = true;
-          listType = 'ol';
-        }
-        result.push(`<li>${numberedMatch[1]}</li>`);
+        result.push(`<li>${match[1]}</li>`);
       } else {
         if (inList) {
-          result.push(`</${listType}>`);
+          result.push('</ul>');
           inList = false;
-          listType = null;
         }
         result.push(line);
       }
     });
 
-    if (inList) result.push(`</${listType}>`);
+    if (inList) result.push('</ul>');
     return result.join('\n');
   };
 
   const formatParagraphs = (text) => {
-    let paragraphs = text.split(/\n\s*\n/);
-    paragraphs = paragraphs.map((para) => {
+    return text.split(/\n\s*\n/).map(para => {
       if (para.trim().startsWith('<')) return para;
       para = para.replace(/\n/g, '<br>');
       return `<p>${para}</p>`;
-    });
-    return paragraphs.join('\n');
+    }).join('\n');
   };
 
-  // ========== VOICE & OTHER UTILITIES ==========
-  const initializeVoiceRecognition = () => {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-      recognitionRef.current.onresult = (event) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        processVoiceCommand(transcript);
-      };
-    }
-  };
-
-  const toggleVoiceInput = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-    } else {
-      recognitionRef.current?.start();
-      setIsListening(true);
-      showNotification('🎤 Listening...', 'info');
-    }
-  };
-
-  const processVoiceCommand = (command) => {
-    const lower = command.toLowerCase();
-    if (lower.includes('make aesthetic')) applySmartFormatting();
-    else if (lower.includes('analytics')) setShowAnalytics(true);
-    else if (lower.includes('chat')) setShowAIChat(true);
-    else if (lower.includes('focus')) toggleFocusMode();
-  };
-
+  // ========== UTILITIES ==========
+  
   const wrapSelection = (before, after) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    const selectedText = rawText.substring(start, end);
-    if (selectedText) {
-      const newText = rawText.substring(0, start) + before + selectedText + after + rawText.substring(end);
+    const selected = rawText.substring(start, end);
+    if (selected) {
+      const newText = rawText.substring(0, start) + before + selected + after + rawText.substring(end);
       setRawText(newText);
     }
-  };
-
-  const insertSymbol = (symbol) => {
-    const textarea = textareaRef.current;
-    const start = textarea.selectionStart;
-    const newText = rawText.substring(0, start) + symbol + rawText.substring(start);
-    setRawText(newText);
   };
 
   const saveNote = () => {
@@ -716,29 +365,24 @@ function App() {
       showNotification('Nothing to save!', 'warning');
       return;
     }
-    const title = prompt('Enter a title:') || 'Untitled Note';
+    const title = prompt('Note title:') || 'Untitled';
     const note = {
       id: Date.now(),
       title,
       rawContent: rawText,
-      formattedContent: formatText(rawText),
       createdAt: new Date().toISOString(),
-      theme: selectedTheme,
-      template: selectedTemplate,
-      topic: selectedTopic,
-      tags: currentNoteTags,
-      folder: currentFolder
+      folder: currentFolder,
+      tags: currentNoteTags
     };
     const notes = [...savedNotes, note];
     setSavedNotes(notes);
-    localStorage.setItem('noteFormatter_savedNotes', JSON.stringify(notes));
-    trackNoteCreation(selectedTopic);
-    showNotification('📝 Note saved!', 'success');
+    localStorage.setItem('notify_notes', JSON.stringify(notes));
+    showNotification('✨ Note saved!', 'success');
   };
 
   const loadSavedNotes = () => {
     try {
-      const notes = JSON.parse(localStorage.getItem('noteFormatter_savedNotes') || '[]');
+      const notes = JSON.parse(localStorage.getItem('notify_notes') || '[]');
       setSavedNotes(notes);
     } catch (error) {
       console.error('Error loading notes:', error);
@@ -747,7 +391,7 @@ function App() {
 
   const loadSettings = () => {
     try {
-      const saved = localStorage.getItem('noteFormatter_settings');
+      const saved = localStorage.getItem('notify_settings');
       if (saved) setAutoFormatSettings(JSON.parse(saved));
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -756,55 +400,34 @@ function App() {
 
   const saveSettings = (newSettings) => {
     setAutoFormatSettings(newSettings);
-    localStorage.setItem('noteFormatter_settings', JSON.stringify(newSettings));
+    localStorage.setItem('notify_settings', JSON.stringify(newSettings));
     showNotification('⚙️ Settings saved!', 'success');
+  };
+
+  const loadAnalytics = () => {
+    try {
+      const saved = localStorage.getItem('notify_analytics');
+      if (saved) setStudyStats(JSON.parse(saved));
+    } catch (error) {
+      console.error('Error loading analytics:', error);
+    }
   };
 
   const loadNote = (note) => {
     setRawText(note.rawContent);
-    setSelectedTheme(note.theme || 'warm');
-    setSelectedTopic(note.topic || 'general');
-    setCurrentNoteTags(note.tags || []);
     setCurrentFolder(note.folder || 'General');
+    setCurrentNoteTags(note.tags || []);
     setShowSidebar(false);
     showNotification('✅ Note loaded!', 'success');
   };
 
   const deleteNote = (id) => {
     if (window.confirm('Delete this note?')) {
-      const notes = savedNotes.filter((n) => n.id !== id);
+      const notes = savedNotes.filter(n => n.id !== id);
       setSavedNotes(notes);
-      localStorage.setItem('noteFormatter_savedNotes', JSON.stringify(notes));
-      showNotification('🗑️ Note deleted!', 'info');
+      localStorage.setItem('notify_notes', JSON.stringify(notes));
+      showNotification('🗑️ Deleted!', 'info');
     }
-  };
-
-  const exportToPDF = async () => {
-    if (!rawText.trim()) {
-      showNotification('Nothing to export!', 'warning');
-      return;
-    }
-    try {
-      const element = document.getElementById('preview');
-      if (window.html2pdf) {
-        await window.html2pdf().set({
-          margin: 1,
-          filename: 'my-notes.pdf',
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2 },
-          jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-        }).from(element).save();
-        showNotification('📄 Exporting PDF...', 'info');
-      }
-    } catch (error) {
-      console.error('PDF export error:', error);
-    }
-  };
-
-  const copyHTML = () => {
-    if (!rawText.trim()) return;
-    navigator.clipboard.writeText(document.getElementById('preview').innerHTML)
-      .then(() => showNotification('📋 HTML copied!', 'success'));
   };
 
   const showNotification = (message, type = 'info') => {
@@ -814,94 +437,101 @@ function App() {
 
   const formatDate = (dateString) => new Date(dateString).toLocaleDateString();
 
-  const splitIntoPages = () => rawText.split(/\n\s*\n/);
-  const nextPage = () => { if (currentPage < splitIntoPages().length - 1) setCurrentPage(currentPage + 1); };
-  const prevPage = () => { if (currentPage > 0) setCurrentPage(currentPage - 1); };
+  const addTag = (tag) => {
+    if (!currentNoteTags.includes(tag)) {
+      setCurrentNoteTags([...currentNoteTags, tag]);
+    }
+  };
+
+  const removeTag = (tag) => {
+    setCurrentNoteTags(currentNoteTags.filter(t => t !== tag));
+  };
+
+  const searchNotes = (query) => {
+    if (!query) return savedNotes;
+    const lower = query.toLowerCase();
+    return savedNotes.filter(note => 
+      note.title.toLowerCase().includes(lower) ||
+      note.rawContent.toLowerCase().includes(lower)
+    );
+  };
+
+  const formatPomodoroTime = () => {
+    const minutes = Math.floor(pomodoroTime / 60);
+    const seconds = pomodoroTime % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
 
   // ========== RENDER ==========
   return (
-    <div className={`app theme-${selectedTheme} ${focusMode ? 'focus-mode' : ''}`}>
+    <div className={`app theme-${selectedTheme}`}>
       <header className="header">
-        <h1>✨ Note Formatter Ultimate</h1>
-        <p>AI Chat • Analytics • Smart Formatting • Visual Tools • Full Organization</p>
+        <div className="header-glow"></div>
+        <h1 className="app-title">
+          <span className="title-icon">✨</span>
+          Notify
+        </h1>
+        <p className="app-subtitle">Beautiful Notes • Real AI • Pure Magic</p>
       </header>
 
-      <div className="view-mode-switcher">
-        <button className={`mode-btn ${viewMode === 'editor' ? 'active' : ''}`} onClick={() => setViewMode('editor')}>
-          ✏️ Editor
+      <nav className="main-nav">
+        <button className={`nav-btn ${viewMode === 'editor' ? 'active' : ''}`} onClick={() => setViewMode('editor')}>
+          <span className="nav-icon">✏️</span>
+          Editor
         </button>
-        <button className={`mode-btn ${showAIChat ? 'active' : ''}`} onClick={() => setShowAIChat(!showAIChat)}>
-          💬 AI Chat
+        <button className={`nav-btn ${showAIChat ? 'active' : ''}`} onClick={() => setShowAIChat(!showAIChat)}>
+          <span className="nav-icon">💬</span>
+          AI Chat
         </button>
-        <button className={`mode-btn ${showAnalytics ? 'active' : ''}`} onClick={() => setShowAnalytics(!showAnalytics)}>
-          📊 Analytics
+        <button className={`nav-btn ${showAnalytics ? 'active' : ''}`} onClick={() => setShowAnalytics(!showAnalytics)}>
+          <span className="nav-icon">📊</span>
+          Analytics
         </button>
-        <button className={`mode-btn ${showTemplateLibrary ? 'active' : ''}`} onClick={() => setShowTemplateLibrary(!showTemplateLibrary)}>
-          🎨 Templates
+        <button className="nav-btn" onClick={() => setShowSettings(true)}>
+          <span className="nav-icon">⚙️</span>
+          Settings
         </button>
-        <button className="mode-btn settings-btn" onClick={() => setShowSettings(true)}>
-          ⚙️ Settings
-        </button>
-      </div>
+      </nav>
 
       {viewMode === 'editor' && (
         <main className="main-content">
           <section className="editor-section">
             <div className="section-header">
               <h2>Your Notes</h2>
-              <div className="header-controls">
-                <button className="btn btn-magic" onClick={applySmartFormatting}>
-                  ✨ Make Aesthetic
-                </button>
-                <button className={`btn ${focusMode ? 'btn-primary' : 'btn-secondary'}`} onClick={toggleFocusMode}>
-                  {focusMode ? '🎯 Focused' : '🎯 Focus'}
-                </button>
-                <button className={`btn btn-voice ${isListening ? 'listening' : ''}`} onClick={toggleVoiceInput}>
-                  🎤
+              <div className="header-actions">
+                <button className="btn-magic" onClick={applySmartFormatting}>
+                  <span className="btn-sparkle">✨</span>
+                  Make Aesthetic
                 </button>
               </div>
             </div>
 
-            {/* STAGE 10: Topic & Folder Selector */}
             <div className="organization-bar">
-              <select value={currentFolder} onChange={(e) => setCurrentFolder(e.target.value)} className="folder-select">
+              <select value={currentFolder} onChange={(e) => setCurrentFolder(e.target.value)} className="select-elegant">
                 {folders.map(folder => (
-                  <option key={folder} value={folder}>📁 {folder}</option>
+                  <option key={folder}>{folder}</option>
                 ))}
               </select>
               
-              <select value={selectedTopic} onChange={(e) => applyTopicFormat(e.target.value)} className="topic-select">
-                <option value="general">📚 General</option>
-                <option value="math">🔢 Math</option>
-                <option value="science">🔬 Science</option>
-                <option value="history">📜 History</option>
-                <option value="languages">🗣️ Languages</option>
-                <option value="programming">💻 Programming</option>
-              </select>
-
-              <button className="btn btn-sm" onClick={() => setShowTagManager(!showTagManager)}>
+              <button className="btn-tag" onClick={() => setShowTagManager(!showTagManager)}>
                 🏷️ Tags ({currentNoteTags.length})
               </button>
-              
-              <button className="btn btn-sm" onClick={addFolder}>➕ Folder</button>
             </div>
 
             {showTagManager && (
               <div className="tag-manager">
-                <div className="tag-input-group">
-                  <input 
-                    type="text" 
-                    placeholder="Add tag..."
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && e.target.value) {
-                        addTag(e.target.value);
-                        e.target.value = '';
-                      }
-                    }}
-                    className="tag-input"
-                  />
-                </div>
-                <div className="current-tags">
+                <input 
+                  type="text" 
+                  placeholder="Add tag..."
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && e.target.value) {
+                      addTag(e.target.value);
+                      e.target.value = '';
+                    }
+                  }}
+                  className="tag-input"
+                />
+                <div className="tag-list">
                   {currentNoteTags.map(tag => (
                     <span key={tag} className="tag">
                       {tag}
@@ -916,48 +546,32 @@ function App() {
               ref={textareaRef}
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
-              placeholder="Type your notes here..."
+              placeholder="Begin writing something beautiful..."
               className="note-input"
             />
 
-            <div className="toolbar-enhanced">
-              <div className="toolbar-section">
-                <h4>Format</h4>
-                <button onClick={() => wrapSelection('**', '**')} className="tool-btn"><strong>B</strong></button>
-                <button onClick={() => wrapSelection('*', '*')} className="tool-btn"><em>I</em></button>
-                <button onClick={() => wrapSelection('==', '==')} className="tool-btn"><mark>H</mark></button>
-              </div>
-
-              <div className="toolbar-section">
-                <h4>Highlights</h4>
-                <div className="color-palette">
-                  {highlightPalette.map((color, i) => (
-                    <button key={i} className={`color-btn ${i === currentHighlight ? 'active' : ''}`}
-                      style={{ backgroundColor: color }} onClick={() => setCurrentHighlight(i)} />
-                  ))}
-                </div>
-              </div>
-
-              <div className="toolbar-section">
-                <h4>Theme</h4>
-                <select value={selectedTheme} onChange={(e) => setSelectedTheme(e.target.value)}>
-                  <option value="warm">Warm</option>
-                  <option value="cool">Cool</option>
-                  <option value="dark">Dark</option>
-                  <option value="pastel">Pastel</option>
-                  <option value="vibrant">Vibrant</option>
-                </select>
-              </div>
-
-              {/* STAGE 9: Layout Mode */}
-              <div className="toolbar-section">
-                <h4>Layout</h4>
-                <select value={layoutMode} onChange={(e) => changeLayoutMode(e.target.value)}>
-                  <option value="standard">Standard</option>
-                  <option value="magazine">Magazine</option>
-                  <option value="grid">Grid</option>
-                  <option value="minimal">Minimal</option>
-                </select>
+            <div className="toolbar">
+              <button onClick={() => wrapSelection('**', '**')} className="tool-btn" title="Bold">
+                <strong>B</strong>
+              </button>
+              <button onClick={() => wrapSelection('*', '*')} className="tool-btn" title="Italic">
+                <em>I</em>
+              </button>
+              <button onClick={() => wrapSelection('==', '==')} className="tool-btn" title="Highlight">
+                <mark>H</mark>
+              </button>
+              
+              <div className="toolbar-divider"></div>
+              
+              <div className="color-swatches">
+                {highlightPalette.map((color, i) => (
+                  <button 
+                    key={i} 
+                    className={`swatch ${i === currentHighlight ? 'active' : ''}`}
+                    style={{ backgroundColor: color }}
+                    onClick={() => setCurrentHighlight(i)}
+                  />
+                ))}
               </div>
             </div>
           </section>
@@ -965,68 +579,58 @@ function App() {
           <section className="preview-section">
             <div className="section-header">
               <h2>Preview</h2>
-              <div className="action-buttons">
-                <button onClick={saveNote} className="btn btn-primary">💾</button>
-                <button onClick={exportToPDF} className="btn btn-primary">📄</button>
-                <button onClick={copyHTML} className="btn btn-secondary">📋</button>
+              <div className="header-actions">
+                <button onClick={saveNote} className="btn-icon" title="Save">💾</button>
               </div>
             </div>
-            <div id="preview" className="preview-content" dangerouslySetInnerHTML={{ __html: formatText(rawText) }} />
+            <div className="preview-content" dangerouslySetInnerHTML={{ __html: formatText(rawText) }} />
           </section>
         </main>
       )}
 
-      {/* STAGE 7: AI CHAT PANEL */}
+      {/* AI CHAT PANEL */}
       {showAIChat && (
         <div className="ai-chat-panel">
           <div className="chat-header">
-            <h2>💬 AI Study Assistant</h2>
-            <button onClick={() => setShowAIChat(false)} className="close-btn">✕</button>
+            <h3>✨ Claude AI</h3>
+            <button onClick={() => setShowAIChat(false)} className="close-btn">×</button>
           </div>
           
           <div className="chat-messages">
             {chatMessages.length === 0 && (
               <div className="chat-welcome">
-                <h3>👋 Hi! I'm your AI study assistant</h3>
-                <p>Ask me to:</p>
-                <ul>
-                  <li>Explain concepts from your notes</li>
-                  <li>Summarize sections</li>
-                  <li>Generate quiz questions</li>
-                  <li>Suggest improvements</li>
-                </ul>
+                <div className="welcome-icon">🤖</div>
+                <h4>Hi! I'm Claude</h4>
+                <p>Ask me anything about your notes</p>
               </div>
             )}
             {chatMessages.map((msg, i) => (
               <div key={i} className={`chat-message ${msg.role}`}>
-                <div className="message-content">{msg.content}</div>
+                {msg.content}
               </div>
             ))}
             {isAIThinking && <div className="chat-message assistant thinking">Thinking...</div>}
             <div ref={chatEndRef} />
           </div>
 
-          <div className="chat-input-container">
+          <div className="chat-input-area">
             <input
               type="text"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && chatInput && sendMessageToAI(chatInput)}
-              placeholder="Ask me anything about your notes..."
+              placeholder="Ask me anything..."
               className="chat-input"
             />
-            <button onClick={() => chatInput && sendMessageToAI(chatInput)} className="btn btn-primary">
+            <button onClick={() => chatInput && sendMessageToAI(chatInput)} className="btn-send">
               Send
             </button>
           </div>
 
-          <div className="focus-mode-controls">
-            <button onClick={toggleFocusMode} className={`btn ${focusMode ? 'btn-primary' : 'btn-secondary'}`}>
-              {focusMode ? '🎯 Focused' : '🎯 Focus Mode'}
-            </button>
+          <div className="pomodoro-section">
             <button 
-              onClick={pomodoroActive ? stopPomodoro : startPomodoro} 
-              className={`btn ${pomodoroActive ? 'btn-secondary' : 'btn-primary'}`}
+              onClick={() => pomodoroActive ? setPomodoroActive(false) : (setPomodoroActive(true), setPomodoroTime(25 * 60))} 
+              className={`btn-pomodoro ${pomodoroActive ? 'active' : ''}`}
             >
               {pomodoroActive ? `⏸️ ${formatPomodoroTime()}` : '⏱️ Pomodoro'}
             </button>
@@ -1034,203 +638,99 @@ function App() {
         </div>
       )}
 
-      {/* STAGE 8: ANALYTICS DASHBOARD */}
+      {/* ANALYTICS */}
       {showAnalytics && (
-        <div className="analytics-overlay">
-          <div className="analytics-modal">
-            <div className="analytics-header">
+        <div className="modal-overlay">
+          <div className="modal analytics-modal">
+            <div className="modal-header">
               <h2>📊 Study Analytics</h2>
-              <button onClick={() => setShowAnalytics(false)} className="close-btn">✕</button>
+              <button onClick={() => setShowAnalytics(false)} className="close-btn">×</button>
             </div>
-
-            <div className="analytics-content">
+            <div className="modal-content">
               <div className="stats-grid">
                 <div className="stat-card">
-                  <div className="stat-icon">📝</div>
                   <div className="stat-value">{studyStats.totalNotes}</div>
                   <div className="stat-label">Total Notes</div>
                 </div>
-
                 <div className="stat-card">
-                  <div className="stat-icon">⏱️</div>
-                  <div className="stat-value">{formatStudyTime(studyStats.totalStudyTime)}</div>
-                  <div className="stat-label">Study Time</div>
-                </div>
-
-                <div className="stat-card">
-                  <div className="stat-icon">🔥</div>
                   <div className="stat-value">{studyStats.currentStreak}</div>
-                  <div className="stat-label">Day Streak</div>
+                  <div className="stat-label">Day Streak 🔥</div>
                 </div>
-
-                <div className="stat-card">
-                  <div className="stat-icon">🏆</div>
-                  <div className="stat-value">{studyStats.longestStreak}</div>
-                  <div className="stat-label">Best Streak</div>
-                </div>
-              </div>
-
-              <div className="analytics-section">
-                <h3>📚 Top Topics</h3>
-                <div className="topic-list">
-                  {getTopTopics().map(([topic, count]) => (
-                    <div key={topic} className="topic-item">
-                      <span className="topic-name">{topic}</span>
-                      <span className="topic-count">{count} notes</span>
-                    </div>
-                  ))}
-                  {getTopTopics().length === 0 && <p>No topics yet. Start taking notes!</p>}
-                </div>
-              </div>
-
-              <div className="analytics-section">
-                <h3>📈 This Week</h3>
-                <p className="week-stat">You've created {studyStats.notesThisWeek} notes this week!</p>
-                <p className="week-stat">Keep up the great work! 🎉</p>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* STAGE 9: TEMPLATE LIBRARY */}
-      {showTemplateLibrary && (
-        <div className="template-overlay">
-          <div className="template-modal">
-            <div className="template-header">
-              <h2>🎨 Template Library</h2>
-              <button onClick={() => setShowTemplateLibrary(false)} className="close-btn">✕</button>
-            </div>
-
-            <div className="template-content">
-              <div className="template-grid">
-                <div className="template-card" onClick={() => setSelectedTemplate('cornell')}>
-                  <h3>Cornell Notes</h3>
-                  <p>Structured note-taking with cues and summary</p>
-                </div>
-
-                <div className="template-card" onClick={() => setSelectedTemplate('outline')}>
-                  <h3>Outline</h3>
-                  <p>Hierarchical organization</p>
-                </div>
-
-                <div className="template-card" onClick={() => setSelectedTemplate('flashcard')}>
-                  <h3>Flashcards</h3>
-                  <p>Question-answer format</p>
-                </div>
-
-                <div className="template-card" onClick={saveCustomTemplate}>
-                  <h3>💾 Save Custom</h3>
-                  <p>Save current as template</p>
-                </div>
-
-                {customTemplate && (
-                  <div className="template-card" onClick={loadCustomTemplate}>
-                    <h3>📄 {customTemplate.name}</h3>
-                    <p>Your custom template</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* STAGE 6: SETTINGS MODAL */}
+      {/* SETTINGS */}
       {showSettings && (
-        <div className="settings-overlay">
-          <div className="settings-modal">
-            <div className="settings-header">
-              <h2>⚙️ Smart Formatting Settings</h2>
-              <button onClick={() => setShowSettings(false)} className="close-btn">✕</button>
+        <div className="modal-overlay">
+          <div className="modal settings-modal">
+            <div className="modal-header">
+              <h2>⚙️ Format Settings</h2>
+              <button onClick={() => setShowSettings(false)} className="close-btn">×</button>
             </div>
-
-            <div className="settings-content">
-              <div className="settings-grid">
+            <div className="modal-content">
+              <div className="settings-list">
                 {Object.entries({
-                  enhanceTopics: { title: '📏 Enhance Main Topics', desc: 'Convert topics to headings' },
-                  enhanceSubtopics: { title: '→ Format Subtopics', desc: 'Add arrows to subtopics' },
-                  highlightKeywords: { title: '🎨 Highlight Keywords', desc: 'Auto-highlight important words' },
-                  formatDefinitions: { title: '📖 Format Definitions', desc: 'Format term: definition' },
-                  detectQuestions: { title: '❓ Detect Questions', desc: 'Add icons to questions' },
-                  addIcons: { title: '🎭 Add Context Icons', desc: 'Smart icons based on meaning' },
-                  improveSpacing: { title: '📏 Improve Spacing', desc: 'Better readability' },
-                  colorCode: { title: '🎨 Color-Code Content', desc: 'Colored boxes by type' }
-                }).map(([key, { title, desc }]) => (
-                  <div key={key} className="setting-item">
-                    <label className="setting-label">
-                      <input
-                        type="checkbox"
-                        checked={autoFormatSettings[key]}
-                        onChange={(e) => saveSettings({ ...autoFormatSettings, [key]: e.target.checked })}
-                      />
-                      <div className="setting-info">
-                        <h4>{title}</h4>
-                        <p>{desc}</p>
-                      </div>
-                    </label>
-                  </div>
+                  enhanceTopics: 'Enhance Main Topics',
+                  enhanceSubtopics: 'Format Subtopics',
+                  highlightKeywords: 'Highlight Keywords',
+                  formatDefinitions: 'Format Definitions',
+                  detectQuestions: 'Detect Questions',
+                  addIcons: 'Add Icons',
+                  improveSpacing: 'Improve Spacing',
+                  colorCode: 'Color Code'
+                }).map(([key, label]) => (
+                  <label key={key} className="setting-item">
+                    <input
+                      type="checkbox"
+                      checked={autoFormatSettings[key]}
+                      onChange={(e) => saveSettings({ ...autoFormatSettings, [key]: e.target.checked })}
+                    />
+                    <span>{label}</span>
+                  </label>
                 ))}
               </div>
-
-              <div className="settings-footer">
-                <button className="btn btn-primary" onClick={() => { applySmartFormatting(); setShowSettings(false); }}>
-                  ✨ Apply & Format Now
-                </button>
-              </div>
+              <button className="btn-apply" onClick={() => { applySmartFormatting(); setShowSettings(false); }}>
+                Apply & Format
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Saved Notes Sidebar */}
-      <aside className={`saved-notes-sidebar ${showSidebar ? 'active' : ''}`}>
+      {/* SIDEBAR */}
+      <aside className={`sidebar ${showSidebar ? 'active' : ''}`}>
         <div className="sidebar-header">
           <h3>Saved Notes</h3>
-          <button onClick={() => setShowSidebar(false)} className="close-btn">✕</button>
+          <button onClick={() => setShowSidebar(false)} className="close-btn">×</button>
         </div>
+        
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="🔍 Search..."
+          className="search-input"
+        />
 
-        {/* STAGE 10: Search */}
-        <div className="sidebar-search">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="🔍 Search notes..."
-            className="search-input"
-          />
-        </div>
-
-        <div className="saved-notes-list">
-          {(searchQuery ? searchNotes(searchQuery) : savedNotes).length === 0 ? (
-            <p className="no-notes">No notes found</p>
-          ) : (
-            (searchQuery ? searchNotes(searchQuery) : savedNotes).slice().reverse().map((note) => (
-              <div key={note.id} className="saved-note-item">
-                <h4>{note.title}</h4>
-                <div className="note-meta">
-                  <span className="note-folder">📁 {note.folder || 'General'}</span>
-                  <span className="note-date">{formatDate(note.createdAt)}</span>
-                </div>
-                {note.tags && note.tags.length > 0 && (
-                  <div className="note-tags">
-                    {note.tags.map(tag => (
-                      <span key={tag} className="tag-small">{tag}</span>
-                    ))}
-                  </div>
-                )}
-                <div className="note-actions">
-                  <button onClick={() => loadNote(note)} className="btn btn-sm btn-primary">Load</button>
-                  <button onClick={() => deleteNote(note.id)} className="btn btn-sm btn-secondary">Delete</button>
-                </div>
+        <div className="notes-list">
+          {(searchQuery ? searchNotes(searchQuery) : savedNotes).slice().reverse().map(note => (
+            <div key={note.id} className="note-item">
+              <h4>{note.title}</h4>
+              <p className="note-date">{formatDate(note.createdAt)}</p>
+              <div className="note-actions">
+                <button onClick={() => loadNote(note)} className="btn-sm">Load</button>
+                <button onClick={() => deleteNote(note.id)} className="btn-sm btn-danger">Delete</button>
               </div>
-            ))
-          )}
+            </div>
+          ))}
         </div>
       </aside>
 
-      <button onClick={() => setShowSidebar(!showSidebar)} className="toggle-sidebar-btn">
-        📚 Notes ({savedNotes.length})
+      <button onClick={() => setShowSidebar(!showSidebar)} className="fab">
+        📚 {savedNotes.length}
       </button>
 
       {notification && (
@@ -1238,9 +738,6 @@ function App() {
           {notification.message}
         </div>
       )}
-
-      {/* Focus Mode Overlay */}
-      {focusMode && <div className="focus-overlay" />}
     </div>
   );
 }
