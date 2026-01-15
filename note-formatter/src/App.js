@@ -11,11 +11,9 @@ function App() {
   
   // Visual states
   const [selectedTheme, setSelectedTheme] = useState('luxury');
-  const [selectedTemplate, setSelectedTemplate] = useState('default');
   const [highlightPalette] = useState(['#FFD700', '#FFB6C1', '#B0E0E6', '#98FB98', '#FFDAB9']);
   const [currentHighlight, setCurrentHighlight] = useState(0);
   const [viewMode, setViewMode] = useState('editor');
-  const [currentPage, setCurrentPage] = useState(0);
   
   // Smart formatting
   const [showSettings, setShowSettings] = useState(false);
@@ -30,43 +28,43 @@ function App() {
     colorCode: true
   });
 
-  // AI Chat (REAL CLAUDE API)
+  // AI Chat
   const [showAIChat, setShowAIChat] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [isAIThinking, setIsAIThinking] = useState(false);
   
+  // NEW: AI Command Mode
+  const [commandMode, setCommandMode] = useState(false);
+  const [isListeningCommand, setIsListeningCommand] = useState(false);
+  
+  // NEW: Photo Scanner
+  const [showPhotoScanner, setShowPhotoScanner] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scannedImages, setScannedImages] = useState([]);
+  
   // Pomodoro
   const [pomodoroActive, setPomodoroActive] = useState(false);
   const [pomodoroTime, setPomodoroTime] = useState(25 * 60);
 
-  // Analytics
-  const [showAnalytics, setShowAnalytics] = useState(false);
-  const [studyStats, setStudyStats] = useState({
-    totalNotes: 0,
-    totalStudyTime: 0,
-    currentStreak: 0,
-    longestStreak: 0,
-    topicsStudied: {}
-  });
-
   // Organization
   const [currentFolder, setCurrentFolder] = useState('General');
-  const [folders, setFolders] = useState(['General', 'Math', 'Science', 'History', 'Languages']);
+  const [folders] = useState(['General', 'Math', 'Science', 'History', 'Languages']);
   const [currentNoteTags, setCurrentNoteTags] = useState([]);
   const [showTagManager, setShowTagManager] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Templates
-  const [showTemplateLibrary, setShowTemplateLibrary] = useState(false);
-
   const textareaRef = useRef(null);
   const chatEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const commandRecognitionRef = useRef(null);
 
   useEffect(() => {
     loadSavedNotes();
     loadSettings();
-    loadAnalytics();
+    initializeVoiceRecognition();
+    initializeCommandVoice();
   }, []);
 
   useEffect(() => {
@@ -89,7 +87,144 @@ function App() {
     }
   }, [pomodoroActive, pomodoroTime]);
 
-  // ========== REAL CLAUDE AI INTEGRATION ==========
+  // ========== NEW: VOICE COMMAND SYSTEM ==========
+  
+  const initializeCommandVoice = () => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      commandRecognitionRef.current = new SpeechRecognition();
+      commandRecognitionRef.current.continuous = false;
+      commandRecognitionRef.current.interimResults = false;
+      
+      commandRecognitionRef.current.onresult = (event) => {
+        const command = event.results[0][0].transcript;
+        processAICommand(command);
+        setIsListeningCommand(false);
+      };
+
+      commandRecognitionRef.current.onerror = () => {
+        setIsListeningCommand(false);
+        showNotification('Voice error - try again!', 'warning');
+      };
+
+      commandRecognitionRef.current.onend = () => {
+        setIsListeningCommand(false);
+      };
+    }
+  };
+
+  const startCommandListening = () => {
+    if (commandRecognitionRef.current) {
+      setIsListeningCommand(true);
+      commandRecognitionRef.current.start();
+      showNotification('🎤 Listening for command...', 'info');
+    }
+  };
+
+  const processAICommand = async (command) => {
+    showNotification(`Processing: "${command}"`, 'info');
+    
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 2000,
+          messages: [{
+            role: 'user',
+            content: `You are a note formatting assistant. The user has these notes:
+
+"""
+${rawText}
+"""
+
+User command: "${command}"
+
+Analyze the command and return ONLY the modified notes with the requested changes applied. Common commands:
+- "make X bigger" → Convert to # heading
+- "highlight X" → Wrap in ==X==
+- "bold X" → Wrap in **X**
+- "make X a list" → Convert to bullet points
+- "change X to red" → Wrap in [warning]X[/warning]
+- "add arrows" → Add → symbols
+- "number this" → Convert to numbered list
+
+Return ONLY the formatted text, no explanations.`
+          }]
+        })
+      });
+
+      const data = await response.json();
+      if (data.content && data.content[0]) {
+        setRawText(data.content[0].text);
+        showNotification('✨ Command applied!', 'success');
+      }
+    } catch (error) {
+      console.error('Command error:', error);
+      showNotification('Command failed - try again!', 'error');
+    }
+  };
+
+  // ========== NEW: PHOTO OCR SYSTEM ==========
+  
+  const handlePhotoUpload = async (event) => {
+    const files = Array.from(event.target.files);
+    if (files.length === 0) return;
+
+    setIsScanning(true);
+    showNotification('📸 Scanning images...', 'info');
+
+    try {
+      // Load Tesseract.js dynamically
+      if (!window.Tesseract) {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
+        document.head.appendChild(script);
+        await new Promise(resolve => script.onload = resolve);
+      }
+
+      const scannedTexts = [];
+      
+      for (const file of files) {
+        const imageUrl = URL.createObjectURL(file);
+        
+        // Scan with Tesseract
+        const result = await window.Tesseract.recognize(
+          imageUrl,
+          'eng',
+          {
+            logger: m => {
+              if (m.status === 'recognizing text') {
+                showNotification(`📸 Scanning... ${Math.round(m.progress * 100)}%`, 'info');
+              }
+            }
+          }
+        );
+
+        scannedTexts.push(result.data.text);
+        setScannedImages(prev => [...prev, { url: imageUrl, text: result.data.text }]);
+      }
+
+      // Add scanned text to notes
+      const combinedText = scannedTexts.join('\n\n---\n\n');
+      setRawText(prev => prev ? `${prev}\n\n${combinedText}` : combinedText);
+      
+      setIsScanning(false);
+      setShowPhotoScanner(false);
+      showNotification(`✅ Scanned ${files.length} image(s)!`, 'success');
+    } catch (error) {
+      console.error('OCR error:', error);
+      setIsScanning(false);
+      showNotification('Scanning failed - try again!', 'error');
+    }
+  };
+
+  const triggerPhotoUpload = () => {
+    fileInputRef.current?.click();
+  };
+
+  // ========== REAL CLAUDE AI CHAT ==========
   
   const sendMessageToAI = async (message) => {
     const userMessage = { role: 'user', content: message, timestamp: Date.now() };
@@ -106,36 +241,33 @@ function App() {
           max_tokens: 1000,
           messages: [{
             role: 'user',
-            content: `You are a helpful study assistant. Here are the user's current notes:
+            content: `You are a helpful study assistant. Here are the user's notes:
 
 "${rawText.substring(0, 500)}..."
 
 User question: ${message}
 
-Provide a helpful, concise response to assist with their studying.`
+Provide a helpful, concise response.`
           }]
         })
       });
 
       const data = await response.json();
-      
       if (data.content && data.content[0]) {
-        const assistantMessage = { 
+        setChatMessages(prev => [...prev, { 
           role: 'assistant', 
           content: data.content[0].text, 
           timestamp: Date.now() 
-        };
-        setChatMessages(prev => [...prev, assistantMessage]);
+        }]);
       }
       setIsAIThinking(false);
     } catch (error) {
       console.error('AI error:', error);
-      const errorMessage = {
+      setChatMessages(prev => [...prev, {
         role: 'assistant',
         content: '✨ I apologize, but I encountered an error. Please try again!',
         timestamp: Date.now()
-      };
-      setChatMessages(prev => [...prev, errorMessage]);
+      }]);
       setIsAIThinking(false);
     }
   };
@@ -346,6 +478,25 @@ Provide a helpful, concise response to assist with their studying.`
     }).join('\n');
   };
 
+  // ========== VOICE RECOGNITION ==========
+  
+  const initializeVoiceRecognition = () => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      
+      recognitionRef.current.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        setRawText(prev => prev + ' ' + transcript);
+      };
+    }
+  };
+
   // ========== UTILITIES ==========
   
   const wrapSelection = (before, after) => {
@@ -402,15 +553,6 @@ Provide a helpful, concise response to assist with their studying.`
     setAutoFormatSettings(newSettings);
     localStorage.setItem('notify_settings', JSON.stringify(newSettings));
     showNotification('⚙️ Settings saved!', 'success');
-  };
-
-  const loadAnalytics = () => {
-    try {
-      const saved = localStorage.getItem('notify_analytics');
-      if (saved) setStudyStats(JSON.parse(saved));
-    } catch (error) {
-      console.error('Error loading analytics:', error);
-    }
   };
 
   const loadNote = (note) => {
@@ -471,7 +613,7 @@ Provide a helpful, concise response to assist with their studying.`
           <span className="title-icon">✨</span>
           Notify
         </h1>
-        <p className="app-subtitle">Beautiful Notes • Real AI • Pure Magic</p>
+        <p className="app-subtitle">AI Voice Commands • Photo Scanner • Real Intelligence</p>
       </header>
 
       <nav className="main-nav">
@@ -483,9 +625,9 @@ Provide a helpful, concise response to assist with their studying.`
           <span className="nav-icon">💬</span>
           AI Chat
         </button>
-        <button className={`nav-btn ${showAnalytics ? 'active' : ''}`} onClick={() => setShowAnalytics(!showAnalytics)}>
-          <span className="nav-icon">📊</span>
-          Analytics
+        <button className={`nav-btn ${showPhotoScanner ? 'active' : ''}`} onClick={() => setShowPhotoScanner(!showPhotoScanner)}>
+          <span className="nav-icon">📸</span>
+          Scan Photo
         </button>
         <button className="nav-btn" onClick={() => setShowSettings(true)}>
           <span className="nav-icon">⚙️</span>
@@ -506,6 +648,35 @@ Provide a helpful, concise response to assist with their studying.`
               </div>
             </div>
 
+            {/* NEW: AI COMMAND BAR */}
+            <div className="command-bar">
+              <div className="command-controls">
+                <button 
+                  className={`btn-command ${isListeningCommand ? 'listening' : ''}`}
+                  onClick={startCommandListening}
+                >
+                  <span className="command-icon">🎤</span>
+                  {isListeningCommand ? 'Listening...' : 'Voice Command'}
+                </button>
+                
+                <input
+                  type="text"
+                  placeholder="Or type a command: 'make this bigger', 'highlight important', etc."
+                  className="command-input"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && e.target.value) {
+                      processAICommand(e.target.value);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </div>
+              
+              <div className="command-hints">
+                <span className="hint">💡 Try: "make topics bigger" • "highlight key words" • "bold the definitions"</span>
+              </div>
+            </div>
+
             <div className="organization-bar">
               <select value={currentFolder} onChange={(e) => setCurrentFolder(e.target.value)} className="select-elegant">
                 {folders.map(folder => (
@@ -516,6 +687,19 @@ Provide a helpful, concise response to assist with their studying.`
               <button className="btn-tag" onClick={() => setShowTagManager(!showTagManager)}>
                 🏷️ Tags ({currentNoteTags.length})
               </button>
+              
+              <button className="btn-photo" onClick={triggerPhotoUpload}>
+                📸 Scan Photo
+              </button>
+              
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handlePhotoUpload}
+                style={{ display: 'none' }}
+              />
             </div>
 
             {showTagManager && (
@@ -546,7 +730,7 @@ Provide a helpful, concise response to assist with their studying.`
               ref={textareaRef}
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
-              placeholder="Begin writing something beautiful..."
+              placeholder="Type notes or scan a photo..."
               className="note-input"
             />
 
@@ -602,6 +786,7 @@ Provide a helpful, concise response to assist with their studying.`
                 <div className="welcome-icon">🤖</div>
                 <h4>Hi! I'm Claude</h4>
                 <p>Ask me anything about your notes</p>
+                <p className="command-tip">💡 Use voice commands to format your notes!</p>
               </div>
             )}
             {chatMessages.map((msg, i) => (
@@ -638,25 +823,50 @@ Provide a helpful, concise response to assist with their studying.`
         </div>
       )}
 
-      {/* ANALYTICS */}
-      {showAnalytics && (
+      {/* PHOTO SCANNER MODAL */}
+      {showPhotoScanner && (
         <div className="modal-overlay">
-          <div className="modal analytics-modal">
+          <div className="modal scanner-modal">
             <div className="modal-header">
-              <h2>📊 Study Analytics</h2>
-              <button onClick={() => setShowAnalytics(false)} className="close-btn">×</button>
+              <h2>📸 Photo Scanner</h2>
+              <button onClick={() => setShowPhotoScanner(false)} className="close-btn">×</button>
             </div>
             <div className="modal-content">
-              <div className="stats-grid">
-                <div className="stat-card">
-                  <div className="stat-value">{studyStats.totalNotes}</div>
-                  <div className="stat-label">Total Notes</div>
+              {isScanning ? (
+                <div className="scanning-status">
+                  <div className="scan-spinner"></div>
+                  <p>Scanning your image...</p>
                 </div>
-                <div className="stat-card">
-                  <div className="stat-value">{studyStats.currentStreak}</div>
-                  <div className="stat-label">Day Streak 🔥</div>
+              ) : (
+                <div className="scanner-content">
+                  <div className="scanner-instructions">
+                    <h3>📷 Upload Photos to Extract Text</h3>
+                    <ul>
+                      <li>✅ Handwritten notes</li>
+                      <li>✅ Printed documents</li>
+                      <li>✅ Textbooks & papers</li>
+                      <li>✅ Multiple images at once</li>
+                    </ul>
+                  </div>
+                  
+                  <button className="btn-upload-large" onClick={triggerPhotoUpload}>
+                    <span className="upload-icon">📸</span>
+                    Choose Images to Scan
+                  </button>
+
+                  {scannedImages.length > 0 && (
+                    <div className="scanned-images">
+                      <h4>Recently Scanned:</h4>
+                      {scannedImages.map((img, i) => (
+                        <div key={i} className="scanned-item">
+                          <img src={img.url} alt={`Scan ${i + 1}`} />
+                          <p className="scanned-text">{img.text.substring(0, 100)}...</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
