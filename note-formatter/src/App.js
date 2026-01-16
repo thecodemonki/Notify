@@ -33,6 +33,8 @@ function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [isAIThinking, setIsAIThinking] = useState(false);
+  const [isChatExpanded, setIsChatExpanded] = useState(false); // NEW: for bubble vs expanded
+  const [unreadMessages, setUnreadMessages] = useState(0); // NEW: unread count
   
   // NEW: AI Command Mode
   const [commandMode, setCommandMode] = useState(false);
@@ -42,6 +44,14 @@ function App() {
   const [showPhotoScanner, setShowPhotoScanner] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scannedImages, setScannedImages] = useState([]);
+  
+  // NEW: PRESENTATION MODE
+  const [showPresentation, setShowPresentation] = useState(false);
+  const [presentationMode, setPresentationMode] = useState('slideshow'); // slideshow, mindmap, timeline, cards
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [slides, setSlides] = useState([]);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+  const [animationStyle, setAnimationStyle] = useState('fade'); // fade, slide, zoom, flip, cube
   
   // Pomodoro
   const [pomodoroActive, setPomodoroActive] = useState(false);
@@ -224,6 +234,140 @@ Return ONLY the formatted text, no explanations.`
     fileInputRef.current?.click();
   };
 
+  // ========== NEW: PRESENTATION MODE SYSTEM ==========
+  
+  const createPresentation = () => {
+    if (!rawText.trim()) {
+      showNotification('No notes to present!', 'warning');
+      return;
+    }
+    
+    // Parse notes into slides
+    const parsedSlides = parseNotesIntoSlides(rawText);
+    setSlides(parsedSlides);
+    setCurrentSlide(0);
+    setShowPresentation(true);
+    showNotification('🎬 Presentation ready!', 'success');
+  };
+
+  const parseNotesIntoSlides = (text) => {
+    const lines = text.split('\n');
+    const slides = [];
+    let currentSlide = { title: '', content: [], type: 'content' };
+    
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      
+      // Main heading = new slide
+      if (trimmed.startsWith('# ')) {
+        if (currentSlide.title || currentSlide.content.length > 0) {
+          slides.push({ ...currentSlide });
+        }
+        currentSlide = {
+          title: trimmed.replace(/^#\s+/, ''),
+          content: [],
+          type: 'title'
+        };
+      }
+      // Subheading
+      else if (trimmed.startsWith('## ')) {
+        if (currentSlide.content.length > 5) {
+          slides.push({ ...currentSlide });
+          currentSlide = {
+            title: trimmed.replace(/^##\s+/, ''),
+            content: [],
+            type: 'content'
+          };
+        } else {
+          currentSlide.content.push({ type: 'subheading', text: trimmed.replace(/^##\s+/, '') });
+        }
+      }
+      // Bullet points
+      else if (trimmed.match(/^[-*→•]\s+/)) {
+        currentSlide.content.push({
+          type: 'bullet',
+          text: trimmed.replace(/^[-*→•]\s+/, '')
+        });
+      }
+      // Regular text
+      else if (trimmed.length > 0) {
+        currentSlide.content.push({ type: 'text', text: trimmed });
+      }
+      
+      // Create new slide if content is too long
+      if (currentSlide.content.length > 8) {
+        slides.push({ ...currentSlide });
+        currentSlide = { title: currentSlide.title + ' (cont.)', content: [], type: 'content' };
+      }
+    });
+    
+    // Add last slide
+    if (currentSlide.title || currentSlide.content.length > 0) {
+      slides.push(currentSlide);
+    }
+    
+    return slides.length > 0 ? slides : [{ title: 'Your Notes', content: [{ type: 'text', text: rawText }], type: 'content' }];
+  };
+
+  const generateMindMap = () => {
+    // Parse notes into mind map structure
+    const lines = rawText.split('\n');
+    const nodes = [];
+    let currentTopic = null;
+    
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('# ')) {
+        currentTopic = { 
+          id: nodes.length, 
+          label: trimmed.replace(/^#\s+/, ''), 
+          level: 1,
+          children: [] 
+        };
+        nodes.push(currentTopic);
+      } else if (trimmed.startsWith('## ') && currentTopic) {
+        currentTopic.children.push({
+          id: nodes.length,
+          label: trimmed.replace(/^##\s+/, ''),
+          level: 2
+        });
+      } else if (trimmed.match(/^[-*→]\s+/) && currentTopic) {
+        currentTopic.children.push({
+          id: nodes.length,
+          label: trimmed.replace(/^[-*→]\s+/, ''),
+          level: 3
+        });
+      }
+    });
+    
+    return nodes;
+  };
+
+  const nextSlide = () => {
+    setCurrentSlide(prev => (prev < slides.length - 1 ? prev + 1 : prev));
+  };
+
+  const prevSlide = () => {
+    setCurrentSlide(prev => (prev > 0 ? prev - 1 : prev));
+  };
+
+  const toggleAutoPlay = () => {
+    setIsAutoPlaying(!isAutoPlaying);
+  };
+
+  // Auto-advance slides
+  useEffect(() => {
+    if (isAutoPlaying && showPresentation && currentSlide < slides.length - 1) {
+      const timer = setTimeout(() => {
+        nextSlide();
+      }, 5000); // 5 seconds per slide
+      return () => clearTimeout(timer);
+    } else if (isAutoPlaying && currentSlide >= slides.length - 1) {
+      setIsAutoPlaying(false);
+      showNotification('Presentation complete!', 'success');
+    }
+  }, [isAutoPlaying, currentSlide, showPresentation, slides.length]);
+
   // ========== REAL CLAUDE AI CHAT ==========
   
   const sendMessageToAI = async (message) => {
@@ -254,11 +398,17 @@ Provide a helpful, concise response.`
 
       const data = await response.json();
       if (data.content && data.content[0]) {
-        setChatMessages(prev => [...prev, { 
+        const assistantMessage = { 
           role: 'assistant', 
           content: data.content[0].text, 
           timestamp: Date.now() 
-        }]);
+        };
+        setChatMessages(prev => [...prev, assistantMessage]);
+        
+        // Increment unread if chat is not expanded
+        if (!isChatExpanded) {
+          setUnreadMessages(prev => prev + 1);
+        }
       }
       setIsAIThinking(false);
     } catch (error) {
@@ -621,9 +771,9 @@ Provide a helpful, concise response.`
           <span className="nav-icon">✏️</span>
           Editor
         </button>
-        <button className={`nav-btn ${showAIChat ? 'active' : ''}`} onClick={() => setShowAIChat(!showAIChat)}>
-          <span className="nav-icon">💬</span>
-          AI Chat
+        <button className={`nav-btn ${showPresentation ? 'active' : ''}`} onClick={createPresentation}>
+          <span className="nav-icon">🎬</span>
+          Present
         </button>
         <button className={`nav-btn ${showPhotoScanner ? 'active' : ''}`} onClick={() => setShowPhotoScanner(!showPhotoScanner)}>
           <span className="nav-icon">📸</span>
@@ -648,20 +798,12 @@ Provide a helpful, concise response.`
               </div>
             </div>
 
-            {/* NEW: AI COMMAND BAR */}
+            {/* NEW: AI COMMAND BAR - Voice on Right */}
             <div className="command-bar">
               <div className="command-controls">
-                <button 
-                  className={`btn-command ${isListeningCommand ? 'listening' : ''}`}
-                  onClick={startCommandListening}
-                >
-                  <span className="command-icon">🎤</span>
-                  {isListeningCommand ? 'Listening...' : 'Voice Command'}
-                </button>
-                
                 <input
                   type="text"
-                  placeholder="Or type a command: 'make this bigger', 'highlight important', etc."
+                  placeholder="Type a command: 'make this bigger', 'highlight important', etc."
                   className="command-input"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && e.target.value) {
@@ -670,6 +812,14 @@ Provide a helpful, concise response.`
                     }
                   }}
                 />
+                
+                <button 
+                  className={`btn-command ${isListeningCommand ? 'listening' : ''}`}
+                  onClick={startCommandListening}
+                >
+                  <span className="command-icon">🎤</span>
+                  {isListeningCommand ? 'Listening...' : 'Voice Command'}
+                </button>
               </div>
               
               <div className="command-hints">
@@ -772,12 +922,35 @@ Provide a helpful, concise response.`
         </main>
       )}
 
-      {/* AI CHAT PANEL */}
-      {showAIChat && (
-        <div className="ai-chat-panel">
+      {/* AI CHAT WIDGET - ALWAYS VISIBLE IN BOTTOM RIGHT */}
+      {!isChatExpanded && (
+        <button 
+          className="chat-bubble"
+          onClick={() => {
+            setIsChatExpanded(true);
+            setUnreadMessages(0);
+          }}
+        >
+          <span className="chat-bubble-icon">💬</span>
+          {unreadMessages > 0 && (
+            <span className="bubble-unread-badge">{unreadMessages}</span>
+          )}
+        </button>
+      )}
+
+      {isChatExpanded && (
+        <div className="ai-chat-widget">
           <div className="chat-header">
             <h3>✨ Claude AI</h3>
-            <button onClick={() => setShowAIChat(false)} className="close-btn">×</button>
+            <div className="chat-header-actions">
+              <button 
+                onClick={() => setIsChatExpanded(false)} 
+                className="close-btn"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
           </div>
           
           <div className="chat-messages">
@@ -942,6 +1115,211 @@ Provide a helpful, concise response.`
       <button onClick={() => setShowSidebar(!showSidebar)} className="fab">
         📚 {savedNotes.length}
       </button>
+
+      {/* PRESENTATION MODE */}
+      {showPresentation && (
+        <div className="presentation-overlay">
+          <div className="presentation-container">
+            {/* Presentation Header */}
+            <div className="presentation-header">
+              <div className="presentation-controls">
+                <select 
+                  value={presentationMode} 
+                  onChange={(e) => setPresentationMode(e.target.value)}
+                  className="mode-select"
+                >
+                  <option value="slideshow">🎬 Slideshow</option>
+                  <option value="mindmap">🧠 Mind Map</option>
+                  <option value="timeline">📅 Timeline</option>
+                  <option value="cards">🎴 Cards</option>
+                </select>
+
+                {presentationMode === 'slideshow' && (
+                  <>
+                    <select 
+                      value={animationStyle} 
+                      onChange={(e) => setAnimationStyle(e.target.value)}
+                      className="animation-select"
+                    >
+                      <option value="fade">✨ Fade</option>
+                      <option value="slide">➡️ Slide</option>
+                      <option value="zoom">🔍 Zoom</option>
+                      <option value="flip">🔄 Flip</option>
+                      <option value="cube">📦 Cube</option>
+                    </select>
+
+                    <button 
+                      className={`btn-autoplay ${isAutoPlaying ? 'active' : ''}`}
+                      onClick={toggleAutoPlay}
+                    >
+                      {isAutoPlaying ? '⏸️ Pause' : '▶️ Auto Play'}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <button onClick={() => setShowPresentation(false)} className="close-btn-large">
+                ✕ Exit
+              </button>
+            </div>
+
+            {/* SLIDESHOW MODE */}
+            {presentationMode === 'slideshow' && slides.length > 0 && (
+              <div className="slideshow-mode">
+                <div className={`slide-container animation-${animationStyle}`} key={currentSlide}>
+                  <div className="slide">
+                    <h1 className="slide-title">{slides[currentSlide].title}</h1>
+                    <div className="slide-content">
+                      {slides[currentSlide].content.map((item, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`slide-item ${item.type}`}
+                          style={{ animationDelay: `${idx * 0.1}s` }}
+                        >
+                          {item.type === 'subheading' && <h2>{item.text}</h2>}
+                          {item.type === 'bullet' && (
+                            <div className="bullet-item">
+                              <span className="bullet-icon">→</span>
+                              <span>{item.text}</span>
+                            </div>
+                          )}
+                          {item.type === 'text' && <p>{item.text}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Slide Navigation */}
+                <div className="slide-nav">
+                  <button 
+                    onClick={prevSlide} 
+                    disabled={currentSlide === 0}
+                    className="nav-arrow"
+                  >
+                    ‹
+                  </button>
+                  
+                  <div className="slide-progress">
+                    <span className="slide-number">{currentSlide + 1} / {slides.length}</span>
+                    <div className="progress-bar">
+                      <div 
+                        className="progress-fill" 
+                        style={{ width: `${((currentSlide + 1) / slides.length) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={nextSlide} 
+                    disabled={currentSlide === slides.length - 1}
+                    className="nav-arrow"
+                  >
+                    ›
+                  </button>
+                </div>
+
+                {/* Slide Thumbnails */}
+                <div className="slide-thumbnails">
+                  {slides.map((slide, idx) => (
+                    <button
+                      key={idx}
+                      className={`thumbnail ${idx === currentSlide ? 'active' : ''}`}
+                      onClick={() => setCurrentSlide(idx)}
+                    >
+                      <div className="thumbnail-title">{slide.title}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* MIND MAP MODE */}
+            {presentationMode === 'mindmap' && (
+              <div className="mindmap-mode">
+                <div className="mindmap-canvas">
+                  {generateMindMap().map((node, idx) => (
+                    <div 
+                      key={idx} 
+                      className={`mindmap-node level-${node.level}`}
+                      style={{
+                        top: `${20 + idx * 80}px`,
+                        left: node.level === 1 ? '50%' : `${30 + node.level * 150}px`,
+                        animationDelay: `${idx * 0.2}s`
+                      }}
+                    >
+                      <div className="node-content">
+                        {node.label}
+                      </div>
+                      {node.children && node.children.map((child, childIdx) => (
+                        <div 
+                          key={childIdx} 
+                          className={`mindmap-node level-${child.level}`}
+                          style={{
+                            marginTop: '60px',
+                            marginLeft: `${childIdx * 200 - 100}px`,
+                            animationDelay: `${(idx + childIdx) * 0.2 + 0.3}s`
+                          }}
+                        >
+                          <div className="node-content child-node">
+                            {child.label}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* TIMELINE MODE */}
+            {presentationMode === 'timeline' && (
+              <div className="timeline-mode">
+                <div className="timeline-line"></div>
+                {slides.map((slide, idx) => (
+                  <div 
+                    key={idx} 
+                    className={`timeline-item ${idx % 2 === 0 ? 'left' : 'right'}`}
+                    style={{ animationDelay: `${idx * 0.3}s` }}
+                  >
+                    <div className="timeline-dot"></div>
+                    <div className="timeline-card">
+                      <h3>{slide.title}</h3>
+                      {slide.content.slice(0, 3).map((item, i) => (
+                        <p key={i}>{item.text}</p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* CARDS MODE */}
+            {presentationMode === 'cards' && (
+              <div className="cards-mode">
+                {slides.map((slide, idx) => (
+                  <div 
+                    key={idx} 
+                    className="flip-card"
+                    style={{ animationDelay: `${idx * 0.1}s` }}
+                  >
+                    <div className="flip-card-inner">
+                      <div className="flip-card-front">
+                        <h3>{slide.title}</h3>
+                      </div>
+                      <div className="flip-card-back">
+                        {slide.content.map((item, i) => (
+                          <p key={i}>{item.text}</p>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {notification && (
         <div className={`notification notification-${notification.type}`}>
